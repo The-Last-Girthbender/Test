@@ -40,8 +40,8 @@ public class NihongoQuestClient implements ClientModInitializer {
                     case DOWNLOADING -> "Downloading the Japanese speech model in the background — quizzes start once it's done.";
                     default -> SpeechService.unavailableReason();
                 };
-                if (msg != null && !msg.isBlank()) {
-                    client.gui.hud.getChat().addMessage(Component.literal("[日本語クエスト] ").withStyle(ChatFormatting.GOLD)
+                if (msg != null && !msg.isBlank() && client.player != null) {
+                    client.player.sendSystemMessage(Component.literal("[日本語クエスト] ").withStyle(ChatFormatting.GOLD)
                             .append(Component.literal(msg).withStyle(ChatFormatting.GRAY)));
                 }
             });
