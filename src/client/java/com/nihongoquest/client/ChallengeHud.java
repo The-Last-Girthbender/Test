@@ -30,7 +30,7 @@ final class ChallengeHud {
         ClientChallenge c = ClientChallenge.current();
         if (c == null) return;
         Minecraft mc = Minecraft.getInstance();
-        if (mc.options.hideGui) return;
+        if (mc.gui.hud.isHidden()) return;
         Font font = mc.font;
         ModConfig cfg = ModConfig.get();
         Word w = c.word;
