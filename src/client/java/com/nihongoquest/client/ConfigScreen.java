@@ -12,7 +12,7 @@ import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.Util;
+import net.minecraft.util.Util;
 
 import java.util.ArrayList;
 import java.util.List;
