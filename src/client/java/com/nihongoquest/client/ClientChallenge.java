@@ -211,7 +211,7 @@ public final class ClientChallenge {
     }
 
     private static void chat(Component msg) {
-        Minecraft.getInstance().gui.hud.getChat().addMessage(msg);
+        if (Minecraft.getInstance().player != null) Minecraft.getInstance().player.sendSystemMessage(msg);
     }
 
     private static void sound(SoundEvent event, float pitch) {
