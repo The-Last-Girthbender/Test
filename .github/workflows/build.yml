@@ -1,5 +1,4 @@
-# Optional: if you upload this folder to GitHub, this builds the mod jar for you
-# (Actions tab -> latest run -> "nihongo-quest-jar" download). No local Java needed.
+# Builds the mod jar on every push (Actions tab -> latest run -> "nihongo-quest-jar" download).
 name: build
 on: [push, pull_request, workflow_dispatch]
 
@@ -7,13 +6,22 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
       - run: chmod +x ./gradlew
-      - run: ./gradlew build
+      - name: Build
+        run: |
+          set -o pipefail
+          ./gradlew build 2>&1 | tee build.log
+      - name: Report build errors
+        if: failure()
+        run: |
+          # Put the compiler/Gradle error text into an annotation so it's visible on the run page.
+          summary=$( { grep -E -A4 "error:|What went wrong" build.log || tail -n 40 build.log; } | head -n 80 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')
+          echo "::error title=Build failed::${summary}"
       - uses: actions/upload-artifact@v4
         with:
           name: nihongo-quest-jar
