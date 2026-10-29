@@ -1,0 +1,96 @@
+// ============================================================================
+//  Nihongo Quest (日本語クエスト) configuration
+//  File location: .minecraft/config/nihongoquest/config.json
+//
+//  Lines starting with // are comments and are ignored.
+//  Changes take effect the next time you load or join a world.
+//  If you break this file, delete it and a fresh one is created on next launch.
+// ============================================================================
+{
+  // ---------------------------------------------------------------------------
+  //  DIFFICULTY PRESET  —  the easiest way to set things up.
+  //
+  //   "beginner" : 45 s to answer, shows kanji + kana + romaji + English,
+  //                forgiving pronunciation check (60% match is enough).
+  //   "normal"   : 30 s to answer, shows kanji + kana + romaji + English,
+  //                moderate check (75% match).
+  //   "advanced" : 20 s, quiz every 5 pickups, NO romaji (read the kana!),
+  //                strict check (90% match).
+  //   "expert"   : 15 s, quiz every 3 pickups, ONLY the English name is shown —
+  //                you must remember the Japanese word yourself. Very strict.
+  // ---------------------------------------------------------------------------
+  "difficulty": "normal",
+
+  // ---------------------------------------------------------------------------
+  //  PRESET OVERRIDES (for advanced users)
+  //  Remove the // in front of any line to override that one setting while
+  //  keeping the rest of the preset. Remember the comma at the end of the line!
+  // ---------------------------------------------------------------------------
+  // "timeLimitSeconds": 30,       // seconds to say the word (5 - 600)
+  // "quizEveryNPickups": 10,      // quiz on every Nth pickup of the same item type
+  // "showKanji": true,            // show the kanji spelling, e.g. 林檎
+  // "showKana": true,             // show the kana spelling, e.g. りんご
+  // "showRomaji": true,           // show the Latin-letter reading, e.g. ringo
+  // "showEnglish": true,          // show the item's normal in-game name
+  // "matchStrictness": 0.75,      // 0.0 = anything counts, 1.0 = must be exact
+
+  // ---------------------------------------------------------------------------
+  //  WHEN QUIZZES HAPPEN
+  // ---------------------------------------------------------------------------
+  // Also quiz the very first time you ever pick up an item type.
+  "quizOnFirstPickup": false,
+
+  // "pickups" = each time the item enters your inventory counts once
+  //             (picking up a stack of 64 = 1 pickup, mining 10 blocks = 10).
+  // "items"   = every single item counts (a stack of 64 = 64).
+  "countMode": "pickups",
+
+  // No quizzes while in Creative or Spectator mode.
+  "ignoreCreativeMode": true,
+
+  // Moving an item out of your inventory and back within this many seconds
+  // (e.g. rearranging, putting it in a crafting grid) doesn't count as a new pickup.
+  "recountCooldownSeconds": 5,
+
+  // true  = only quiz items that have a hand-written entry in vocabulary.json
+  // false = also quiz other items using Minecraft's own Japanese translation
+  "onlyItemsWithBuiltInWords": false,
+
+  // Items that never trigger a quiz. Use the item ID (press F3+H in game to see IDs).
+  "excludedItems": [
+    "minecraft:written_book",
+    "minecraft:writable_book",
+    "minecraft:knowledge_book"
+  ],
+
+  // For colored items like red_wool, add the color word too: 赤い羊毛 (akai youmou).
+  "includeColorWords": true,
+
+  // ---------------------------------------------------------------------------
+  //  SPEECH RECOGNITION (offline, nothing is sent over the internet)
+  // ---------------------------------------------------------------------------
+  // Download the Japanese speech model (~48 MB) automatically on first launch.
+  "autoDownloadSpeechModel": true,
+  "speechModelUrl": "https://alphacephei.com/vosk/models/vosk-model-small-ja-0.22.zip",
+  // Folder (inside config/nihongoquest/) that holds the unzipped model.
+  "speechModelFolder": "vosk-model-small-ja-0.22",
+
+  // Part of your microphone's name to use a specific one, e.g. "Yeti".
+  // Leave empty to use the system default microphone.
+  // The names of all detected microphones are written to the game log on startup.
+  "microphone": "",
+
+  // If your microphone or the speech model isn't working:
+  //   false = the quiz is skipped (you keep the items)
+  //   true  = it counts as a wrong answer (the items are removed)
+  "penalizeWhenSpeechUnavailable": false,
+
+  // ---------------------------------------------------------------------------
+  //  DISPLAY & SOUND
+  // ---------------------------------------------------------------------------
+  "playSounds": true,
+  // Distance in pixels of the quiz panel from the top of the screen.
+  "hudYOffset": 6,
+  // Show what the microphone heard (helps you see how you're being understood).
+  "showWhatWasHeard": true
+}

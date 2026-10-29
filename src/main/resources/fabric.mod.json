@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "nihongoquest",
+  "version": "${version}",
+  "name": "Nihongo Quest (日本語クエスト)",
+  "description": "Learn Japanese while you play. Every few pickups of an item, you have a limited time to say its Japanese name into your microphone, or the new items vanish.",
+  "authors": ["You"],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["com.nihongoquest.NihongoQuest"],
+    "client": ["com.nihongoquest.client.NihongoQuestClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "~26.3",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}
