@@ -12,7 +12,6 @@ import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.util.Util;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -177,7 +176,7 @@ public class ConfigScreen extends Screen {
                 "If the microphone or speech model isn't working:\nOFF = skip the quiz, ON = lose the items."));
         items.add(at -> addRenderableWidget(Button.builder(Component.literal("Open config folder"), btn -> {
             try {
-                Util.getPlatform().openPath(NihongoQuest.configDir());
+                openFolder(NihongoQuest.configDir());
             } catch (Throwable t) {
                 NihongoQuest.LOGGER.warn("Could not open folder: {}", t.getMessage());
             }
@@ -185,6 +184,17 @@ public class ConfigScreen extends Screen {
                 "Opens the folder with config.json and vocabulary.json,\n"
                         + "for editing words and excluded items."))).build()));
         return items;
+    }
+
+    /** Opens a folder in the system file manager (Explorer / Finder / xdg-open). */
+    private static void openFolder(java.nio.file.Path dir) throws java.io.IOException {
+        java.nio.file.Files.createDirectories(dir);
+        String path = dir.toAbsolutePath().toString();
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        String[] cmd = os.contains("win") ? new String[]{"explorer.exe", path}
+                : os.contains("mac") ? new String[]{"open", path}
+                : new String[]{"xdg-open", path};
+        new ProcessBuilder(cmd).start();
     }
 
     // ------------------------------------------------------------------ widget helpers
