@@ -40,8 +40,6 @@ public final class SpeechService {
 
     public enum Status { IDLE, DOWNLOADING, LOADING, READY, MISSING, ERROR }
 
-    private static final float SAMPLE_RATE = 16000f;
-    private static final AudioFormat FORMAT = new AudioFormat(SAMPLE_RATE, 16, 1, true, false);
     private static final Gson GSON = new Gson();
 
     private static final ExecutorService LOADER = Executors.newSingleThreadExecutor(r -> {
@@ -146,7 +144,7 @@ public final class SpeechService {
     public static List<String> microphoneNames() {
         List<String> names = new ArrayList<>();
         try {
-            DataLine.Info info = new DataLine.Info(TargetDataLine.class, FORMAT);
+            Line.Info info = new Line.Info(TargetDataLine.class);
             for (Mixer.Info mi : AudioSystem.getMixerInfo()) {
                 if (AudioSystem.getMixer(mi).isLineSupported(info) && !names.contains(mi.getName())) {
                     names.add(mi.getName());
@@ -192,20 +190,103 @@ public final class SpeechService {
         if (l != null) l.running = false;
     }
 
-    private static TargetDataLine openMicrophone() throws Exception {
-        DataLine.Info info = new DataLine.Info(TargetDataLine.class, FORMAT);
+    // ------------------------------------------------------------------ microphone
+
+    /** What the listener is hearing right now, for the HUD and the mic test. */
+    public static volatile float inputLevel;     // 0..1, loudness of the last 0.1 s
+    public static volatile float peakLevel;      // loudest level since listening started
+    public static volatile long listeningSince;  // System.currentTimeMillis() when the mic opened, 0 if not open
+    public static volatile String openedMic = "";
+
+    /** A microphone that's open and recording, plus the format it agreed to. */
+    private record OpenMic(TargetDataLine line, AudioFormat format, String name) {}
+
+    /** Formats to try, best first. Vosk accepts any sample rate; stereo is mixed down to mono. */
+    private static final float[][] CANDIDATES = {
+            {16000, 1}, {48000, 1}, {44100, 1}, {32000, 1}, {22050, 1},
+            {48000, 2}, {44100, 2}, {16000, 2}, {32000, 2}, {22050, 2}
+    };
+
+    private static OpenMic openMicrophone() throws Exception {
         String wanted = ModConfig.get().microphone == null ? "" : ModConfig.get().microphone.trim().toLowerCase(Locale.ROOT);
+        Exception last = null;
         if (!wanted.isEmpty()) {
+            boolean found = false;
             for (Mixer.Info mi : AudioSystem.getMixerInfo()) {
+                if (!mi.getName().toLowerCase(Locale.ROOT).contains(wanted)) continue;
                 Mixer mixer = AudioSystem.getMixer(mi);
-                if (mi.getName().toLowerCase(Locale.ROOT).contains(wanted) && mixer.isLineSupported(info)) {
-                    Line line = mixer.getLine(info);
-                    return (TargetDataLine) line;
+                if (!mixer.isLineSupported(new Line.Info(TargetDataLine.class))) continue;
+                found = true;
+                for (float[] c : CANDIDATES) {
+                    AudioFormat f = new AudioFormat(c[0], 16, (int) c[1], true, false);
+                    DataLine.Info info = new DataLine.Info(TargetDataLine.class, f);
+                    if (!mixer.isLineSupported(info)) continue;
+                    try {
+                        TargetDataLine line = (TargetDataLine) mixer.getLine(info);
+                        line.open(f, bufferBytes(f) * 2);
+                        return new OpenMic(line, f, mi.getName());
+                    } catch (Exception e) {
+                        last = e;
+                    }
                 }
             }
-            NihongoQuest.LOGGER.warn("Microphone matching \"{}\" not found, using the default one.", wanted);
+            NihongoQuest.LOGGER.warn(found
+                    ? "Microphone \"{}\" was found but couldn't be opened, trying the default one."
+                    : "Microphone matching \"{}\" not found, using the default one.", wanted);
         }
-        return (TargetDataLine) AudioSystem.getLine(info);
+        for (float[] c : CANDIDATES) {
+            AudioFormat f = new AudioFormat(c[0], 16, (int) c[1], true, false);
+            DataLine.Info info = new DataLine.Info(TargetDataLine.class, f);
+            if (!AudioSystem.isLineSupported(info)) continue;
+            try {
+                TargetDataLine line = (TargetDataLine) AudioSystem.getLine(info);
+                line.open(f, bufferBytes(f) * 2);
+                return new OpenMic(line, f, "system default");
+            } catch (Exception e) {
+                last = e;
+            }
+        }
+        throw last != null ? last : new IllegalStateException("no microphone that can record was found");
+    }
+
+    /** Bytes in 0.1 s of audio for this format. */
+    private static int bufferBytes(AudioFormat f) {
+        return Math.max(f.getFrameSize(), (int) (f.getSampleRate() / 10) * f.getFrameSize());
+    }
+
+    /**
+     * Turns raw 16-bit audio into mono 16-bit little-endian (what Vosk wants) and
+     * returns the number of bytes written to {@code out}. Also updates the level meter.
+     */
+    private static int toMono(byte[] in, int n, int channels, byte[] out) {
+        int frames = n / (2 * channels);
+        double sumSq = 0;
+        for (int i = 0; i < frames; i++) {
+            int sum = 0;
+            for (int ch = 0; ch < channels; ch++) {
+                int idx = (i * channels + ch) * 2;
+                sum += (short) ((in[idx] & 0xFF) | (in[idx + 1] << 8));
+            }
+            int sample = sum / channels;
+            out[i * 2] = (byte) sample;
+            out[i * 2 + 1] = (byte) (sample >> 8);
+            double norm = sample / 32768.0;
+            sumSq += norm * norm;
+        }
+        float rms = frames == 0 ? 0f : (float) Math.sqrt(sumSq / frames);
+        float level = Math.min(1f, rms * 4f); // normal speech lands around 0.2-0.8
+        inputLevel = level;
+        if (level > peakLevel) peakLevel = level;
+        return frames * 2;
+    }
+
+    /** Listens without a target word: for the "Test microphone" button. */
+    public static void listenTest(Consumer<String> onHeard, Consumer<String> onError) {
+        listen(List.of(), text -> false, onHeard, () -> {}, onError);
+    }
+
+    public static boolean isListening() {
+        return listener != null;
     }
 
     private static final class Listener extends Thread {
@@ -231,38 +312,50 @@ public final class SpeechService {
 
         @Override
         public void run() {
-            TargetDataLine mic = null;
+            OpenMic mic = null;
             Recognizer free = null;
             Recognizer restricted = null;
+            inputLevel = 0f;
+            peakLevel = 0f;
             try {
                 try {
                     mic = openMicrophone();
-                    mic.open(FORMAT, 6400);
-                    mic.start();
+                    mic.line().start();
                 } catch (Throwable t) {
                     onError.accept("Could not open the microphone (" + t.getMessage()
                             + "). Check it's plugged in and that Minecraft is allowed to use it.");
                     return;
                 }
+                AudioFormat f = mic.format();
+                if (!mic.name().equals(openedMic)) {
+                    NihongoQuest.LOGGER.info("Listening on microphone: {} ({} Hz, {} channel(s))",
+                            mic.name(), (int) f.getSampleRate(), f.getChannels());
+                }
+                openedMic = mic.name();
+                listeningSince = System.currentTimeMillis();
 
-                free = new Recognizer(model, SAMPLE_RATE);
-                try {
-                    List<String> phrases = new ArrayList<>(grammarPhrases);
-                    phrases.add("[unk]");
-                    restricted = new Recognizer(model, SAMPLE_RATE, GSON.toJson(phrases));
-                } catch (Throwable t) {
-                    restricted = null; // some models don't support word lists; the free recognizer still works
+                free = new Recognizer(model, f.getSampleRate());
+                if (!grammarPhrases.isEmpty()) {
+                    try {
+                        List<String> phrases = new ArrayList<>(grammarPhrases);
+                        phrases.add("[unk]");
+                        restricted = new Recognizer(model, f.getSampleRate(), GSON.toJson(phrases));
+                    } catch (Throwable t) {
+                        restricted = null; // some models don't support word lists; the free recognizer still works
+                    }
                 }
 
                 StringBuilder freeDone = new StringBuilder();
                 StringBuilder restrictedDone = new StringBuilder();
-                byte[] buf = new byte[3200]; // 0.1 s of audio
+                byte[] raw = new byte[bufferBytes(f)];
+                byte[] mono = new byte[raw.length];
                 while (running) {
-                    int n = mic.read(buf, 0, buf.length);
+                    int n = mic.line().read(raw, 0, raw.length);
                     if (n <= 0) continue;
+                    int m = toMono(raw, n, f.getChannels(), mono);
 
-                    String heardFree = feed(free, buf, n, freeDone);
-                    String heardRestricted = restricted != null ? feed(restricted, buf, n, restrictedDone) : "";
+                    String heardFree = feed(free, mono, m, freeDone);
+                    String heardRestricted = restricted != null ? feed(restricted, mono, m, restrictedDone) : "";
                     if (!running) break;
 
                     onHeard.accept(heardFree.isBlank() ? heardRestricted : heardFree);
@@ -275,8 +368,10 @@ public final class SpeechService {
             } catch (Throwable t) {
                 if (running) onError.accept("Speech recognition stopped: " + t.getMessage());
             } finally {
+                listeningSince = 0;
+                inputLevel = 0f;
                 if (mic != null) {
-                    try { mic.stop(); mic.close(); } catch (Throwable ignored) {}
+                    try { mic.line().stop(); mic.line().close(); } catch (Throwable ignored) {}
                 }
                 if (free != null) free.close();
                 if (restricted != null) restricted.close();

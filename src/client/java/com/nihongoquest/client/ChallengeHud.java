@@ -1,6 +1,7 @@
 package com.nihongoquest.client;
 
 import com.nihongoquest.client.ClientChallenge.State;
+import com.nihongoquest.client.speech.SpeechService;
 import com.nihongoquest.config.ModConfig;
 import com.nihongoquest.vocab.Vocabulary.Word;
 import net.minecraft.client.DeltaTracker;
@@ -79,6 +80,14 @@ final class ChallengeHud {
 
         String header = "日本語で言って！  Say it in Japanese!";
 
+        // Microphone sending only silence for 3+ seconds: almost always Windows/macOS mic privacy.
+        String micWarning = null;
+        long since = SpeechService.listeningSince;
+        if (c.state == State.LISTENING && since > 0 && System.currentTimeMillis() - since > 3000
+                && SpeechService.peakLevel < 0.01f) {
+            micWarning = "No sound from your mic! Check its privacy settings.";
+        }
+
         // ---- measure ----
         int pad = 6;
         int contentW = font.width(header) + 20;
@@ -89,6 +98,11 @@ final class ChallengeHud {
         }
         contentW = Math.max(contentW, font.width(status));
         contentH += 8 + 12; // timer bar + status
+        if (c.state == State.LISTENING) contentH += 6; // mic level bar
+        if (micWarning != null) {
+            contentW = Math.max(contentW, font.width(micWarning));
+            contentH += 11;
+        }
         int panelW = Math.min(g.guiWidth() - 8, contentW + pad * 2);
         int panelH = contentH + pad * 2;
         int x0 = (g.guiWidth() - panelW) / 2;
@@ -137,5 +151,19 @@ final class ChallengeHud {
 
         // ---- status ----
         g.centeredText(font, Component.literal(status), cx, y, statusColor);
+        y += 11;
+
+        // ---- microphone level ----
+        if (c.state == State.LISTENING) {
+            int meterW = Math.min(80, barX1 - barX0);
+            int mx0 = cx - meterW / 2;
+            float level = SpeechService.inputLevel;
+            g.fill(mx0, y, mx0 + meterW, y + 3, 0xFF333340);
+            g.fill(mx0, y, mx0 + (int) (meterW * level), y + 3, level > 0.05f ? 0xFF66E0FF : 0xFF557788);
+            y += 6;
+        }
+        if (micWarning != null) {
+            g.centeredText(font, micWarning, cx, y, RED);
+        }
     }
 }

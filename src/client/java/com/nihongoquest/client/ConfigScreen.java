@@ -33,6 +33,11 @@ public class ConfigScreen extends Screen {
     private final List<Runnable> refreshers = new ArrayList<>();
     private List<String> microphones;
 
+    // Microphone test state (callbacks arrive on the microphone thread)
+    private boolean testing;
+    private volatile String testHeard = "";
+    private volatile String testError;
+
     public ConfigScreen(Screen parent) {
         super(Component.literal("Nihongo Quest (日本語クエスト) Settings"));
         this.parent = parent;
@@ -65,6 +70,7 @@ public class ConfigScreen extends Screen {
         for (int i = 0; i < tabs.length; i++) {
             final int index = i;
             Button tab = Button.builder(Component.literal(tabs[i]), b -> {
+                stopTest();
                 page = index;
                 Minecraft.getInstance().gui.setScreen(new ConfigScreen(parent));
             }).bounds(cx - COL_W - 5 + i * (COL_W + 10), 26, COL_W, 20).build();
@@ -160,6 +166,7 @@ public class ConfigScreen extends Screen {
                 String current = cfg().microphone == null ? "" : cfg().microphone;
                 for (int i = 0; i < options.size(); i++) if (options.get(i).equalsIgnoreCase(current)) idx = i;
                 cfg().microphone = options.get((idx + 1) % options.size());
+                if (testing) startTest(); // re-open with the newly chosen mic
                 refresh();
             }).bounds(at[0], at[1], COL_W, 20).tooltip(Tooltip.create(Component.literal(
                     "Click to switch between microphones.\n"
@@ -174,6 +181,21 @@ public class ConfigScreen extends Screen {
         items.add(toggle("No mic = fail", () -> cfg().penalizeWhenSpeechUnavailable,
                 v -> cfg().penalizeWhenSpeechUnavailable = v,
                 "If the microphone or speech model isn't working:\nOFF = skip the quiz, ON = lose the items."));
+        items.add(at -> {
+            Button b = Button.builder(Component.empty(), btn -> {
+                if (testing) stopTest();
+                else startTest();
+                refresh();
+            }).bounds(at[0], at[1], COL_W, 20).tooltip(Tooltip.create(Component.literal(
+                    "Listen to your microphone without a quiz.\n"
+                            + "Shows how loud it is and what the speech recognizer understood."))).build();
+            addRenderableWidget(b);
+            refreshers.add(() -> {
+                b.setMessage(Component.literal(testing ? "Stop mic test" : "Test microphone"));
+                ClientChallenge quiz = ClientChallenge.current();
+                b.active = testing || quiz == null || quiz.state != ClientChallenge.State.LISTENING;
+            });
+        });
         items.add(at -> addRenderableWidget(Button.builder(Component.literal("Open config folder"), btn -> {
             try {
                 openFolder(NihongoQuest.configDir());
@@ -264,11 +286,65 @@ public class ConfigScreen extends Screen {
         for (Runnable r : refreshers) r.run();
     }
 
+    // ------------------------------------------------------------------ microphone test
+
+    private void startTest() {
+        testHeard = "";
+        testError = null;
+        if (!SpeechService.isReady()) {
+            testing = false;
+            testError = SpeechService.unavailableReason();
+            SpeechService.retryIfFailed();
+            return;
+        }
+        testing = true;
+        SpeechService.listenTest(h -> testHeard = h, e -> {
+            testError = e;
+            testing = false;
+        });
+    }
+
+    private void stopTest() {
+        if (testing) SpeechService.stop();
+        testing = false;
+    }
+
+    private void drawTest(GuiGraphicsExtractor g) {
+        int cx = this.width / 2;
+        int y = this.height - 64;
+        String error = testError;
+        if (error != null) {
+            g.centeredText(this.font, error.length() > 90 ? error.substring(0, 89) + "…" : error, cx, y + 4, 0xFFFF5555);
+            return;
+        }
+        int meterW = 160;
+        float level = SpeechService.inputLevel;
+        g.fill(cx - meterW / 2, y, cx + meterW / 2, y + 4, 0xFF333340);
+        g.fill(cx - meterW / 2, y, cx - meterW / 2 + (int) (meterW * level), y + 4,
+                level > 0.05f ? 0xFF55DD55 : 0xFF557755);
+        String mic = SpeechService.openedMic == null || SpeechService.openedMic.isEmpty() ? "…" : SpeechService.openedMic;
+        long since = SpeechService.listeningSince;
+        String line;
+        int color = 0xFFFFFFFF;
+        if (since > 0 && System.currentTimeMillis() - since > 3000 && SpeechService.peakLevel < 0.01f) {
+            line = "No sound from \"" + mic + "\". Check Windows mic privacy / pick another mic.";
+            color = 0xFFFF5555;
+        } else if (testHeard == null || testHeard.isBlank()) {
+            line = "Listening on \"" + mic + "\"… say something in Japanese";
+            color = 0xFFAAAAAA;
+        } else {
+            String h = testHeard.trim();
+            line = "聞こえた: " + (h.length() > 40 ? "…" + h.substring(h.length() - 40) : h);
+        }
+        g.centeredText(this.font, line, cx, y + 8, color);
+    }
+
     // ------------------------------------------------------------------ drawing & closing
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
         super.extractRenderState(graphics, mouseX, mouseY, delta);
+        if (testing || testError != null) drawTest(graphics);
         graphics.centeredText(this.font, this.title, this.width / 2, 10, 0xFFFFFFFF);
         String hint = "Hover over a setting for an explanation. Saved when you click Done.";
         graphics.centeredText(this.font, hint, this.width / 2, this.height - 42, 0xFFAAAAAA);
@@ -276,6 +352,7 @@ public class ConfigScreen extends Screen {
 
     @Override
     public void onClose() {
+        stopTest();
         ModConfig.save();
         Minecraft.getInstance().gui.setScreen(parent);
     }
