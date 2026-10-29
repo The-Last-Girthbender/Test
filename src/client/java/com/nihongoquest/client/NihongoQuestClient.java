@@ -41,7 +41,7 @@ public class NihongoQuestClient implements ClientModInitializer {
                     default -> SpeechService.unavailableReason();
                 };
                 if (msg != null && !msg.isBlank()) {
-                    client.gui.getChat().addMessage(Component.literal("[日本語クエスト] ").withStyle(ChatFormatting.GOLD)
+                    client.gui.hud.getChat().addMessage(Component.literal("[日本語クエスト] ").withStyle(ChatFormatting.GOLD)
                             .append(Component.literal(msg).withStyle(ChatFormatting.GRAY)));
                 }
             });
