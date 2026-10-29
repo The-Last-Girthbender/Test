@@ -90,6 +90,73 @@ public final class ModConfig {
         }
     }
 
+    /**
+     * Writes the current values into config.json, changing only the value on each setting's
+     * line so all comments are kept. Preset overrides that are null get commented out again.
+     */
+    public static synchronized void save() {
+        ModConfig c = instance;
+        Path path = file();
+        try {
+            Files.createDirectories(path.getParent());
+            if (Files.notExists(path)) {
+                try (InputStream in = ModConfig.class.getResourceAsStream("/assets/nihongoquest/default_config.json")) {
+                    if (in != null) Files.copy(in, path);
+                }
+            }
+            String text = Files.readString(path, StandardCharsets.UTF_8);
+            Gson out = new com.google.gson.GsonBuilder().disableHtmlEscaping().create();
+            java.util.LinkedHashMap<String, Object> values = new java.util.LinkedHashMap<>();
+            values.put("difficulty", c.preset().name());
+            values.put("timeLimitSeconds", c.timeLimitSeconds);
+            values.put("quizEveryNPickups", c.quizEveryNPickups);
+            values.put("showKanji", c.showKanji);
+            values.put("showKana", c.showKana);
+            values.put("showRomaji", c.showRomaji);
+            values.put("showEnglish", c.showEnglish);
+            values.put("matchStrictness", c.matchStrictness);
+            values.put("quizOnFirstPickup", c.quizOnFirstPickup);
+            values.put("countMode", c.countEveryItem() ? "items" : "pickups");
+            values.put("ignoreCreativeMode", c.ignoreCreativeMode);
+            values.put("onlyItemsWithBuiltInWords", c.onlyItemsWithBuiltInWords);
+            values.put("includeColorWords", c.includeColorWords);
+            values.put("autoDownloadSpeechModel", c.autoDownloadSpeechModel);
+            values.put("microphone", c.microphone == null ? "" : c.microphone);
+            values.put("penalizeWhenSpeechUnavailable", c.penalizeWhenSpeechUnavailable);
+            values.put("playSounds", c.playSounds);
+            values.put("hudYOffset", c.hudYOffset);
+            values.put("showWhatWasHeard", c.showWhatWasHeard);
+            for (var e : values.entrySet()) {
+                text = ConfigWriter.set(text, e.getKey(), e.getValue() == null ? null : out.toJson(e.getValue()));
+            }
+            Files.writeString(path, text, StandardCharsets.UTF_8);
+            NihongoQuest.LOGGER.info("Config saved.");
+        } catch (Exception e) {
+            NihongoQuest.LOGGER.error("Could not save {}: {}", path, e.getMessage());
+        }
+    }
+
+    /** Switches preset and drops all per-setting overrides. */
+    public void applyPreset(Preset p) {
+        difficulty = p.name();
+        clearOverrides();
+    }
+
+    public void clearOverrides() {
+        timeLimitSeconds = null;
+        quizEveryNPickups = null;
+        showKanji = null;
+        showKana = null;
+        showRomaji = null;
+        showEnglish = null;
+        matchStrictness = null;
+    }
+
+    public boolean hasOverrides() {
+        return timeLimitSeconds != null || quizEveryNPickups != null || showKanji != null || showKana != null
+                || showRomaji != null || showEnglish != null || matchStrictness != null;
+    }
+
     // ------------------------------------------------------------------ presets
 
     public record Preset(String name, int timeLimitSeconds, int quizEvery, boolean kanji, boolean kana,
@@ -99,6 +166,7 @@ public final class ModConfig {
     public static final Preset NORMAL   = new Preset("normal",   30, 10, true, true, true, true, 0.75);
     public static final Preset ADVANCED = new Preset("advanced", 20,  5, true, true, false, true, 0.90);
     public static final Preset EXPERT   = new Preset("expert",   15,  3, false, false, false, true, 0.95);
+    public static final List<Preset> PRESETS = List.of(BEGINNER, NORMAL, ADVANCED, EXPERT);
 
     public Preset preset() {
         String d = difficulty == null ? "normal" : difficulty.trim().toLowerCase(Locale.ROOT);

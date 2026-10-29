@@ -11,6 +11,10 @@ base {
 
 repositories {
     mavenCentral()
+    maven {
+        name = 'TerraformersMC' // Mod Menu
+        url = 'https://maven.terraformersmc.com/releases/'
+    }
 }
 
 loom {
@@ -34,6 +38,9 @@ dependencies {
     // so players only need Fabric API + this mod. (JNA already ships with Minecraft.)
     implementation "com.alphacephei:vosk:${project.vosk_version}"
     include "com.alphacephei:vosk:${project.vosk_version}"
+
+    // Mod Menu is optional: only needed at compile time for the "Config" button.
+    compileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
 }
 
 processResources {

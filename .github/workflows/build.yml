@@ -1,3 +1,5 @@
+# Optional: if you upload this folder to GitHub, this builds the mod jar for you
+# (Actions tab -> latest run -> "nihongo-quest-jar" download). No local Java needed.
 name: build
 on: [push, pull_request, workflow_dispatch]
 

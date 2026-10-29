@@ -142,17 +142,25 @@ public final class SpeechService {
         }
     }
 
-    public static void logMicrophones() {
+    /** Names of all audio inputs that can record in the format we need. */
+    public static List<String> microphoneNames() {
+        List<String> names = new ArrayList<>();
         try {
             DataLine.Info info = new DataLine.Info(TargetDataLine.class, FORMAT);
-            List<String> names = new ArrayList<>();
             for (Mixer.Info mi : AudioSystem.getMixerInfo()) {
-                if (AudioSystem.getMixer(mi).isLineSupported(info)) names.add(mi.getName());
+                if (AudioSystem.getMixer(mi).isLineSupported(info) && !names.contains(mi.getName())) {
+                    names.add(mi.getName());
+                }
             }
-            NihongoQuest.LOGGER.info("Microphones found: {}", names.isEmpty() ? "(none)" : String.join(" | ", names));
         } catch (Throwable t) {
             NihongoQuest.LOGGER.warn("Could not list microphones: {}", t.getMessage());
         }
+        return names;
+    }
+
+    public static void logMicrophones() {
+        List<String> names = microphoneNames();
+        NihongoQuest.LOGGER.info("Microphones found: {}", names.isEmpty() ? "(none)" : String.join(" | ", names));
     }
 
     // ------------------------------------------------------------------ listening

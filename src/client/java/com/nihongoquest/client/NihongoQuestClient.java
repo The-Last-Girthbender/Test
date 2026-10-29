@@ -7,6 +7,8 @@ import com.nihongoquest.network.Payloads.ChallengeResolved;
 import com.nihongoquest.network.Payloads.ChallengeStart;
 import com.nihongoquest.vocab.Vocabulary;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -24,6 +26,20 @@ public class NihongoQuestClient implements ClientModInitializer {
                 (payload, context) -> ClientChallenge.onResolved(payload));
 
         ClientTickEvents.END_CLIENT_TICK.register(ClientChallenge::tick);
+        ClientTickEvents.END_CLIENT_TICK.register(ConfigScreen::tick);
+
+        // /nihongo (or /nihongo config) opens the settings screen.
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) -> {
+            dispatcher.register(ClientCommands.literal("nihongo")
+                    .executes(context -> {
+                        ConfigScreen.openNextTick = true;
+                        return 1;
+                    })
+                    .then(ClientCommands.literal("config").executes(context -> {
+                        ConfigScreen.openNextTick = true;
+                        return 1;
+                    })));
+        });
 
         HudElementRegistry.attachElementBefore(VanillaHudElements.CHAT, NihongoQuest.id("challenge"),
                 ChallengeHud::extract);

@@ -60,7 +60,18 @@ Click *Allow* (or enable it later in System Settings → Privacy & Security → 
 
 ## 4. Configuration
 
-Files are created on first launch in **`.minecraft/config/nihongoquest/`**:
+### In game
+
+Type **`/nihongo`** in chat, or install [Mod Menu](https://modrinth.com/mod/modmenu) and click
+**Mods → Nihongo Quest → Config**. The settings screen has two pages (*Quiz* and *Display & Speech*);
+hover over any setting for an explanation. Changes save when you click **Done** and apply right away
+in singleplayer. On a multiplayer server, the time limit and quiz frequency come from the server's
+config file.
+
+### Config files
+
+Files are created on first launch in **`.minecraft/config/nihongoquest/`**.
+The in-game screen writes to the same `config.json` and keeps its comments.
 
 ### `config.json` — how the game behaves
 

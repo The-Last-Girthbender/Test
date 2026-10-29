@@ -9,7 +9,11 @@
   "environment": "*",
   "entrypoints": {
     "main": ["com.nihongoquest.NihongoQuest"],
-    "client": ["com.nihongoquest.client.NihongoQuestClient"]
+    "client": ["com.nihongoquest.client.NihongoQuestClient"],
+    "modmenu": ["com.nihongoquest.client.ModMenuIntegration"]
+  },
+  "suggests": {
+    "modmenu": "*"
   },
   "depends": {
     "fabricloader": ">=0.19.5",
