@@ -33,6 +33,7 @@ public class ConfigScreen extends Screen {
     private final Screen parent;
     private final List<Runnable> refreshers = new ArrayList<>();
     private List<String> microphones;
+    private int itemsBottom;
 
     // Microphone test state (callbacks arrive on the microphone thread)
     private boolean testing;
@@ -87,6 +88,7 @@ public class ConfigScreen extends Screen {
             case 1 -> displayPage();
             default -> pronunciationPage();
         };
+        itemsBottom = top + ((items.size() + 1) / 2) * ROW_H;
         for (int i = 0; i < items.size(); i++) {
             int col = i % 2;
             int row = i / 2;
@@ -156,7 +158,9 @@ public class ConfigScreen extends Screen {
         List<Consumer<int[]>> items = new ArrayList<>();
         items.add(toggle("Sounds-like guide", () -> cfg().showPronunciation(), v -> cfg().showPronunciation = v,
                 "Show an English respelling under the word, e.g.\n"
-                        + "りんご = reen-goh, はっぱ = hahp-pah, ケーキ = kehh-kee.\n"
+                        + "りんご = reen-goh, はっぱ = hah.pah, ケーキ = kehh-kee.\n"
+                        + "Say it in one breath: dashes are not pauses.\n"
+                        + "A \".\" is a tiny silent beat (the small っ).\n"
                         + "Doubled vowels (ahh, ooo) are held twice as long."));
         items.add(toggle("Read aloud at start", () -> cfg().speakAtQuizStart(), v -> cfg().speakAtQuizStart = v,
                 "Your computer says the word when a quiz starts, then you repeat it.\n"
@@ -231,7 +235,8 @@ public class ConfigScreen extends Screen {
                 refresh();
             }).bounds(at[0], at[1], COL_W, 20).tooltip(Tooltip.create(Component.literal(
                     "Listen to your microphone without a quiz.\n"
-                            + "Shows how loud it is and what the speech recognizer understood."))).build();
+                            + "The waves show your volume: 2-3 green waves is ideal,\n"
+                            + "red waves mean too loud. Also shows what was understood."))).build();
             addRenderableWidget(b);
             refreshers.add(() -> {
                 b.setMessage(Component.literal(testing ? "Stop mic test" : "Test microphone"));
@@ -354,32 +359,37 @@ public class ConfigScreen extends Screen {
 
     private void drawTest(GuiGraphicsExtractor g) {
         int cx = this.width / 2;
-        int y = this.height - 64;
         String error = testError;
         if (error != null) {
-            g.centeredText(this.font, error.length() > 90 ? error.substring(0, 89) + "…" : error, cx, y + 4, 0xFFFF5555);
+            int y = this.height - 60;
+            g.centeredText(this.font, error.length() > 90 ? error.substring(0, 89) + "…" : error, cx, y, 0xFFFF5555);
             return;
         }
-        int meterW = 160;
-        float level = SpeechService.inputLevel;
-        g.fill(cx - meterW / 2, y, cx + meterW / 2, y + 4, 0xFF333340);
-        g.fill(cx - meterW / 2, y, cx - meterW / 2 + (int) (meterW * level), y + 4,
-                level > 0.05f ? 0xFF55DD55 : 0xFF557755);
-        String mic = SpeechService.openedMic == null || SpeechService.openedMic.isEmpty() ? "…" : SpeechService.openedMic;
+        // Big microphone icon: waves stack up (1-3) with your volume, red = too loud.
+        // 2x size if there's room under the buttons, otherwise normal size.
+        int scale = this.height - 52 - itemsBottom >= MicIcon.HEIGHT * 2 ? 2 : 1;
+        int iconW = MicIcon.WIDTH * scale;
+        int iconH = MicIcon.HEIGHT * scale;
+        int iconY = this.height - 52 - iconH;
         long since = SpeechService.listeningSince;
+        boolean silent = since > 0 && System.currentTimeMillis() - since > 3000 && SpeechService.peakLevel < 0.01f;
+        MicIcon.drawScaled(g, cx - iconW / 2, iconY, scale, true, silent);
+
+        String mic = SpeechService.openedMic == null || SpeechService.openedMic.isEmpty() ? "…" : SpeechService.openedMic;
+        String note = MicIcon.levelNote(true);
         String line;
         int color = 0xFFFFFFFF;
-        if (since > 0 && System.currentTimeMillis() - since > 3000 && SpeechService.peakLevel < 0.01f) {
-            line = "No sound from \"" + mic + "\". Check Windows mic privacy / pick another mic.";
-            color = 0xFFFF5555;
+        if (note != null) {
+            line = note;
+            color = 0xFFFF7755;
         } else if (testHeard == null || testHeard.isBlank()) {
-            line = "Listening on \"" + mic + "\"… say something in Japanese";
+            line = "Listening on \"" + mic + "\"… speak at your normal volume (aim for 2-3 waves)";
             color = 0xFFAAAAAA;
         } else {
             String h = testHeard.trim();
             line = "聞こえた: " + (h.length() > 40 ? "…" + h.substring(h.length() - 40) : h);
         }
-        g.centeredText(this.font, line, cx, y + 8, color);
+        g.centeredText(this.font, line, cx, this.height - 48, color);
     }
 
     // ------------------------------------------------------------------ drawing & closing

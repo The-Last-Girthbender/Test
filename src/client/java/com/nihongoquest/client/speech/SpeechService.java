@@ -242,6 +242,7 @@ public final class SpeechService {
     public static volatile float peakLevel;      // loudest level since listening started
     public static volatile long listeningSince;  // System.currentTimeMillis() when the mic opened, 0 if not open
     public static volatile String openedMic = "";
+    public static volatile long lastClipTime;      // when the signal last hit the maximum (too loud)
 
     // While the computer reads a word aloud, audio is thrown away so the quiz can't "hear" it.
     private static volatile boolean voiceActive;
@@ -326,6 +327,7 @@ public final class SpeechService {
                 sum += (short) ((in[idx] & 0xFF) | (in[idx + 1] << 8));
             }
             int sample = sum / channels;
+            if (sample >= 32000 || sample <= -32000) lastClipTime = System.currentTimeMillis();
             out[i * 2] = (byte) sample;
             out[i * 2 + 1] = (byte) (sample >> 8);
             double norm = sample / 32768.0;
@@ -463,8 +465,10 @@ public final class SpeechService {
 
         /** True (and reports the match) if either finished utterance counts as the word. */
         private boolean judge(String freeFinal, String listFinal) {
-            boolean ok = (listFinal != null && !listFinal.isBlank() && exactMatcher.test(listFinal))
-                    || (freeFinal != null && !freeFinal.isBlank() && matcher.test(freeFinal));
+            // Check both (not short-circuited) so everything heard gets recorded for the log.
+            boolean listOk = listFinal != null && !listFinal.isBlank() && exactMatcher.test(listFinal);
+            boolean freeOk = freeFinal != null && !freeFinal.isBlank() && matcher.test(freeFinal);
+            boolean ok = listOk || freeOk;
             if (ok) {
                 running = false;
                 onMatch.run();

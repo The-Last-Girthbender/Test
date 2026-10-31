@@ -51,7 +51,8 @@ final class ChallengeHud {
         if ((cfg.showRomaji() || reveal) && w.romaji() != null && !w.romaji().isBlank()) {
             lines.add(new Line(w.romaji(), AQUA, 1f));
         }
-        if ((cfg.showPronunciation() || reveal) && c.guide != null) {
+        boolean guideShown = (cfg.showPronunciation() || reveal) && c.guide != null;
+        if (guideShown) {
             lines.add(new Line("sounds like: " + c.guide, 0xFF88EE88, 1f));
         }
         if (cfg.showEnglish() || reveal || (!kanjiShown && !kanaShown)) {
@@ -69,20 +70,32 @@ final class ChallengeHud {
             }
             case WAITING -> { status = "…"; statusColor = GRAY; }
             default -> {
-                boolean blink = (System.currentTimeMillis() / 500) % 2 == 0;
                 String heard = c.heard == null ? "" : c.heard.trim();
                 String secs = "  " + (c.ticksLeft + 19) / 20 + "s";
                 if (cfg.showWhatWasHeard && !heard.isEmpty()) {
                     if (heard.length() > 24) heard = "…" + heard.substring(heard.length() - 24);
-                    status = (blink ? "● " : "○ ") + "聞こえた: " + heard + secs;
+                    status = "聞こえた: " + heard + secs;
                 } else {
-                    status = (blink ? "● " : "○ ") + "Listening… 話してください" + secs;
+                    status = "Listening… 話してください" + secs;
                 }
-                statusColor = blink ? RED : 0xFFCC7777;
+                statusColor = WHITE;
             }
         }
 
         String header = "日本語で言って！  Say it in Japanese!";
+        boolean listening = c.state == State.LISTENING;
+
+        // How to say it: in one breath, only stopping where the guide shows a "."
+        String breath = null;
+        int breathColor = 0xFF9999BB;
+        if (listening && c.splitWarning) {
+            breath = "You paused mid-word! Say it in one breath.";
+            breathColor = 0xFFFFAA44;
+        } else if (listening && guideShown) {
+            breath = c.guide.indexOf('.') >= 0
+                    ? "Say it in one breath — only the \".\" is a tiny pause"
+                    : "Say it in one breath — don't stop at the dashes";
+        }
 
         // Small help line: the tricky-sound tip and the "hear it" key.
         String help = null;
@@ -98,13 +111,11 @@ final class ChallengeHud {
             if (!h.isEmpty()) help = h.toString();
         }
 
-        // Microphone sending only silence for 3+ seconds: almost always Windows/macOS mic privacy.
-        String micWarning = null;
+        // Microphone level problems: silent, too loud, or very quiet.
+        String micWarning = MicIcon.levelNote(listening);
         long since = SpeechService.listeningSince;
-        if (c.state == State.LISTENING && since > 0 && System.currentTimeMillis() - since > 3000
-                && SpeechService.peakLevel < 0.01f) {
-            micWarning = "No sound from your mic! Check its privacy settings.";
-        }
+        boolean silent = listening && since > 0 && System.currentTimeMillis() - since > 3000
+                && SpeechService.peakLevel < 0.01f;
 
         // ---- measure ----
         int pad = 6;
@@ -114,9 +125,13 @@ final class ChallengeHud {
             contentW = Math.max(contentW, (int) (font.width(l.text) * l.scale));
             contentH += (int) (10 * l.scale) + 2;
         }
-        contentW = Math.max(contentW, font.width(status));
-        contentH += 8 + 12; // timer bar + status
-        if (c.state == State.LISTENING) contentH += 6; // mic level bar
+        int statusW = font.width(status) + (listening ? MicIcon.WIDTH + 4 : 0);
+        contentW = Math.max(contentW, statusW);
+        contentH += 8 + (listening ? MicIcon.HEIGHT + 2 : 12); // timer bar + status row (with mic icon)
+        if (breath != null) {
+            contentW = Math.max(contentW, font.width(breath));
+            contentH += 11;
+        }
         if (micWarning != null) {
             contentW = Math.max(contentW, font.width(micWarning));
             contentH += 11;
@@ -171,18 +186,19 @@ final class ChallengeHud {
         g.fill(barX0, y, barX0 + (int) ((barX1 - barX0) * frac), y + 4, barColor);
         y += 8;
 
-        // ---- status ----
-        g.centeredText(font, Component.literal(status), cx, y, statusColor);
-        y += 11;
-
-        // ---- microphone level ----
-        if (c.state == State.LISTENING) {
-            int meterW = Math.min(80, barX1 - barX0);
-            int mx0 = cx - meterW / 2;
-            float level = SpeechService.inputLevel;
-            g.fill(mx0, y, mx0 + meterW, y + 3, 0xFF333340);
-            g.fill(mx0, y, mx0 + (int) (meterW * level), y + 3, level > 0.05f ? 0xFF66E0FF : 0xFF557788);
-            y += 6;
+        // ---- status row: microphone icon + what was heard ----
+        if (listening) {
+            int rowX = cx - statusW / 2;
+            MicIcon.draw(g, rowX, y, true, silent);
+            g.text(font, status, rowX + MicIcon.WIDTH + 4, y + (MicIcon.HEIGHT - 8) / 2, statusColor, true);
+            y += MicIcon.HEIGHT + 2;
+        } else {
+            g.centeredText(font, Component.literal(status), cx, y, statusColor);
+            y += 11;
+        }
+        if (breath != null) {
+            g.centeredText(font, breath, cx, y, breathColor);
+            y += 11;
         }
         if (micWarning != null) {
             g.centeredText(font, micWarning, cx, y, RED);

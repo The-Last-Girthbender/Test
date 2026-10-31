@@ -263,24 +263,29 @@ public final class Kana {
     }
 
     /**
-     * Does the heard text count as saying {@code target}? Both must already be normalised.
-     * Passes if the word appears anywhere in what was heard, or if some stretch of the heard
-     * text is at least {@code strictness} similar to it.
+     * How well the heard text matches {@code target}, from 0 to 1. Both must already be
+     * normalised. 1.0 if the word appears anywhere in what was heard; otherwise the best
+     * similarity of any stretch of the heard text about as long as the word.
      */
-    public static boolean matches(String heard, String target, double strictness) {
-        if (heard.isEmpty() || target.isEmpty()) return false;
-        if (heard.contains(target)) return true;
-        if (strictness >= 1.0) return false;
-        // Even at 0% at least one sound has to line up; otherwise random noise would pass.
-        strictness = Math.max(strictness, 0.01);
+    public static double matchScore(String heard, String target) {
+        if (heard.isEmpty() || target.isEmpty()) return 0.0;
+        if (heard.contains(target)) return 1.0;
         int len = target.length();
-        if (heard.length() <= len + 1) return similarity(heard, target) >= strictness;
-        // Slide a window a little wider/narrower than the target across what was heard.
+        if (heard.length() <= len + 1) return similarity(heard, target);
+        double best = 0.0;
         for (int w = Math.max(1, len - 1); w <= len + 1; w++) {
             for (int start = 0; start + w <= heard.length(); start++) {
-                if (similarity(heard.substring(start, start + w), target) >= strictness) return true;
+                best = Math.max(best, similarity(heard.substring(start, start + w), target));
             }
         }
-        return false;
+        return best;
+    }
+
+    /** Does the heard text count as saying {@code target} at this strictness? */
+    public static boolean matches(String heard, String target, double strictness) {
+        double score = matchScore(heard, target);
+        if (strictness >= 1.0) return score >= 1.0;
+        // Even at the lowest setting at least one sound has to line up.
+        return score > 0 && score >= Math.max(strictness, 0.01);
     }
 }

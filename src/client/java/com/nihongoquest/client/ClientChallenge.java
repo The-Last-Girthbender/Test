@@ -52,6 +52,15 @@ public final class ClientChallenge {
     State state = State.LISTENING;
     volatile String heard = "";
     final String guide; // English "sounds like" respelling, or null
+
+    // ---- what happened during this quiz, for the log (written from the microphone thread) ----
+    private final List<String> heardLog = java.util.Collections.synchronizedList(new ArrayList<>());
+    private volatile String passReason;
+    private volatile double bestScore;
+    private volatile String bestHeard = "";
+    private double strictnessUsed;
+    /** Set when a finished utterance was much shorter than the word: the player probably paused mid-word. */
+    volatile boolean splitWarning;
     final String tip;
 
     private ClientChallenge(int id, ItemStack icon, Word word, int totalTicks, int amount) {
@@ -145,6 +154,7 @@ public final class ClientChallenge {
         sound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.6f);
 
         double strictness = cfg.matchStrictness();
+        c.strictnessUsed = strictness;
         List<String> phrases = new ArrayList<>(word.accepted());
         if (word.kana() != null && !phrases.contains(word.kana())) phrases.add(word.kana());
         phrases.addAll(Vocabulary.decoys(word, 20, p.challengeId()));
@@ -166,26 +176,55 @@ public final class ClientChallenge {
         if (cfg.speakAtQuizStart()) VoiceService.speak(spoken(word));
     }
 
-    /** The word-list recognizer picked one of the target's own spellings. */
+    /** The word-list recognizer (target + decoys) picked one of the target's own spellings. */
     boolean isExact(String heardText) {
         String h = Kana.normalize(heardText);
-        for (String t : targets) if (h.equals(t)) return true;
-        return false;
+        boolean ok = false;
+        for (String t : targets) if (h.equals(t)) ok = true;
+        heardLog.add("word list: \"" + heardText + "\"" + (ok ? " ✔" : ""));
+        if (ok && passReason == null) passReason = "word list picked \"" + heardText + "\" (out of the word + 20 decoys)";
+        return ok;
     }
 
     /** Compares by spelling (kanji/kana) and by sound (romaji of the kana parts). */
     boolean isMatch(String heardText, double strictness) {
         String h = Kana.normalize(heardText);
         if (h.isEmpty()) return false;
-        for (String t : targets) if (Kana.matches(h, t, strictness)) return true;
+        strictnessUsed = strictness;
         String hr = Kana.toRomaji(h).replace(" ", "").replace("'", "");
-        for (String t : romajiTargets) if (Kana.matches(hr, t, strictness)) return true;
-        return false;
+        double score = 0;
+        for (String t : targets) score = Math.max(score, Kana.matchScore(h, t));
+        for (String t : romajiTargets) score = Math.max(score, Kana.matchScore(hr, t));
+        boolean ok = strictness >= 1.0 ? score >= 1.0 : score > 0 && score >= strictness;
+
+        int pct = (int) Math.round(score * 100);
+        heardLog.add("open: \"" + heardText + "\" " + pct + "%" + (ok ? " ✔" : ""));
+        if (score >= bestScore) {
+            bestScore = score;
+            bestHeard = heardText;
+        }
+        if (ok && passReason == null) passReason = "sound match " + pct + "% on \"" + heardText + "\"";
+
+        // Much shorter than the word and not a match: they most likely stopped partway through.
+        int shortest = Integer.MAX_VALUE;
+        for (String t : romajiTargets) shortest = Math.min(shortest, t.length());
+        if (!ok && shortest != Integer.MAX_VALUE && hr.length() < shortest * 0.6) splitWarning = true;
+        return ok;
     }
 
     private void logResult(String outcome) {
-        com.nihongoquest.NihongoQuest.LOGGER.info("Quiz {} ({}): {} — heard \"{}\"",
-                word.primary(), word.romaji(), outcome, heard == null ? "" : heard);
+        StringBuilder line = new StringBuilder();
+        line.append("Quiz ").append(word.primary()).append(" (").append(word.romaji()).append("): ").append(outcome);
+        if (passReason != null && outcome.equals("passed")) {
+            line.append(" by ").append(passReason);
+        } else if (bestScore > 0) {
+            line.append(" — best sound match ").append(Math.round(bestScore * 100)).append("% on \"")
+                    .append(bestHeard).append("\", needed ").append(Math.round(strictnessUsed * 100)).append('%');
+        }
+        List<String> heardCopy;
+        synchronized (heardLog) { heardCopy = new ArrayList<>(heardLog); }
+        line.append(" | heard: ").append(heardCopy.isEmpty() ? "(nothing)" : String.join(", ", heardCopy));
+        com.nihongoquest.NihongoQuest.LOGGER.info(line.toString());
     }
 
     private void onRecognised() {

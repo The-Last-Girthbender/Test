@@ -5,8 +5,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * English "sounds like" respellings for kana, e.g. りんご -> "reen-goh", はっぱ -> "hahp-pah",
+ * English "sounds like" respellings for kana, e.g. りんご -> "reen-goh", はっぱ -> "hah.pah",
  * ケーキ -> "kehh-kee". Plain Java, no Minecraft.
+ *
+ * "-" joins sounds that flow straight on (no stopping); "." marks the one real pause in
+ * Japanese words, the small っ (a short silent beat before the next sound).
  *
  * Vowels are always pure in Japanese, so they're respelled the same way every time:
  * a = "ah", i = "ee", u = "oo", e = "eh", o = "oh". A doubled letter at the end
@@ -24,6 +27,7 @@ public final class Pronunciation {
         String s = Kana.toHiragana(Normalizer.normalize(kana, Normalizer.Form.NFKC));
 
         List<StringBuilder> syllables = new ArrayList<>();
+        List<Boolean> pauseBefore = new ArrayList<>();
         StringBuilder cur = null;
         char curVowel = 0;          // last vowel letter of the current syllable (a/i/u/e/o)
         boolean geminate = false;   // っ seen: next consonant also closes the current syllable
@@ -42,7 +46,7 @@ public final class Pronunciation {
             if (c == 'ん') {
                 char next = i + 1 < s.length() ? s.charAt(i + 1) : 0;
                 String n = "ばびぶべぼぱぴぷぺぽまみむめも".indexOf(next) >= 0 ? "m" : "n";
-                if (cur == null) { cur = new StringBuilder(n); syllables.add(cur); }
+                if (cur == null) { cur = new StringBuilder(n); syllables.add(cur); pauseBefore.add(false); }
                 else cur.append(n);
                 curVowel = 0;
                 continue;
@@ -76,22 +80,20 @@ public final class Pronunciation {
                 }
             }
 
-            if (geminate && cur != null && !consonant.isEmpty()) {
-                cur.append(consonant.startsWith("ch") || consonant.startsWith("ts") ? "t"
-                        : consonant.startsWith("sh") ? "s" : consonant.substring(0, 1));
-            }
+            boolean pause = geminate && cur != null;
             geminate = false;
 
             cur = new StringBuilder(consonant).append(vowel == 0 ? "" : vowelSound(vowel));
             syllables.add(cur);
+            pauseBefore.add(pause);
             curVowel = vowel;
         }
 
         if (syllables.isEmpty()) return null;
         StringBuilder out = new StringBuilder();
-        for (StringBuilder sb : syllables) {
-            if (!out.isEmpty()) out.append('-');
-            out.append(sb);
+        for (int k = 0; k < syllables.size(); k++) {
+            if (k > 0) out.append(pauseBefore.get(k) ? '.' : '-');
+            out.append(syllables.get(k));
         }
         return out.toString();
     }
@@ -101,7 +103,6 @@ public final class Pronunciation {
         if (kana == null) return null;
         String s = Kana.toHiragana(kana);
         String r = romaji == null ? Kana.toRomaji(kana) : romaji;
-        if (s.indexOf('っ') >= 0) return "っ = a tiny pause before the next sound";
         if (r.contains("tsu")) return "tsu = the \"ts\" in \"cats\" + oo";
         if (r.contains("fu")) return "fu = blow softly, lips barely touching";
         if (r.contains("r"))
