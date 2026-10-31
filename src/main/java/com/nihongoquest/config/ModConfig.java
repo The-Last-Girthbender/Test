@@ -216,7 +216,8 @@ public final class ModConfig {
 
     public double matchStrictness() {
         double v = matchStrictness != null ? matchStrictness : preset().strictness();
-        return Math.max(0.0, Math.min(1.0, v));
+        // Below 50% random words start to "match", so that's the lowest allowed.
+        return Math.max(0.5, Math.min(1.0, v));
     }
 
     public boolean countEveryItem() {

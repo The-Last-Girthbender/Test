@@ -145,8 +145,12 @@ public final class ClientChallenge {
         sound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.6f);
 
         double strictness = cfg.matchStrictness();
+        List<String> phrases = new ArrayList<>(word.accepted());
+        if (word.kana() != null && !phrases.contains(word.kana())) phrases.add(word.kana());
+        phrases.addAll(Vocabulary.decoys(word, 20, p.challengeId()));
         SpeechService.listen(
-                word.accepted(),
+                phrases,
+                heardText -> c.isExact(heardText),
                 heardText -> c.isMatch(heardText, strictness),
                 heardText -> c.heard = heardText,
                 () -> mc.execute(() -> c.onRecognised()),
@@ -160,6 +164,13 @@ public final class ClientChallenge {
                     }
                 }));
         if (cfg.speakAtQuizStart()) VoiceService.speak(spoken(word));
+    }
+
+    /** The word-list recognizer picked one of the target's own spellings. */
+    boolean isExact(String heardText) {
+        String h = Kana.normalize(heardText);
+        for (String t : targets) if (h.equals(t)) return true;
+        return false;
     }
 
     /** Compares by spelling (kanji/kana) and by sound (romaji of the kana parts). */
@@ -178,7 +189,7 @@ public final class ClientChallenge {
     }
 
     private void onRecognised() {
-        if (current != this || state != State.LISTENING) return;
+        if (current != this || (state != State.LISTENING && state != State.WAITING)) return;
         state = State.PASSED;
         afterTicks = 60;
         SpeechService.stop();
@@ -226,8 +237,9 @@ public final class ClientChallenge {
         switch (c.state) {
             case LISTENING -> {
                 if (--c.ticksLeft <= 0) {
-                    // Time's up here; the server makes the final call and removes the items.
-                    SpeechService.stop();
+                    // Time's up here; whatever is being said right now still gets judged,
+                    // and the server (which waits a moment longer) makes the final call.
+                    SpeechService.finish();
                     c.state = State.WAITING;
                     c.afterTicks = 100;
                 }

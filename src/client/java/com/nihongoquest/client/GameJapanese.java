@@ -27,7 +27,11 @@ final class GameJapanese {
     static Vocabulary.Word wordFor(Item item) {
         if (names == null) load();
         String name = names.get(item.getDescriptionId());
-        return name == null || name.isBlank() ? null : Vocabulary.fromGameTranslation(name);
+        if (name == null || name.isBlank()) return null;
+        // Kanji names have no reading in the game files, so the player couldn't know how to
+        // say them. Only kana-only names (which spell out their own reading) are usable.
+        if (!com.nihongoquest.vocab.Kana.isAllKana(name)) return null;
+        return Vocabulary.fromGameTranslation(name);
     }
 
     private static void load() {

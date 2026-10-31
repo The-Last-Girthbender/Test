@@ -197,12 +197,24 @@ public final class SpeechService {
      */
     public static synchronized void listen(List<String> grammarPhrases, Predicate<String> matcher,
                                            Consumer<String> onHeard, Runnable onMatch, Consumer<String> onError) {
+        listen(grammarPhrases, matcher, matcher, onHeard, onMatch, onError);
+    }
+
+    /**
+     * @param grammarPhrases the target's spellings plus decoy words; the word-list recognizer must pick one
+     * @param exactMatcher   judges the word-list recognizer's pick (should be an exact check)
+     * @param matcher        judges what the open recognizer heard (may be fuzzy)
+     * Only complete utterances (after a pause) are judged, never half-finished guesses.
+     */
+    public static synchronized void listen(List<String> grammarPhrases, Predicate<String> exactMatcher,
+                                           Predicate<String> matcher, Consumer<String> onHeard,
+                                           Runnable onMatch, Consumer<String> onError) {
         stop();
         if (!isReady()) {
             onError.accept(unavailableReason());
             return;
         }
-        Listener l = new Listener(model, grammarPhrases, matcher, onHeard, onMatch, onError);
+        Listener l = new Listener(model, grammarPhrases, exactMatcher, matcher, onHeard, onMatch, onError);
         listener = l;
         l.start();
     }
@@ -211,6 +223,16 @@ public final class SpeechService {
         Listener l = listener;
         listener = null;
         if (l != null) l.running = false;
+    }
+
+    /** Time's up: stop listening, but still judge whatever was being said at that moment. */
+    public static synchronized void finish() {
+        Listener l = listener;
+        listener = null;
+        if (l != null) {
+            l.finishing = true;
+            l.running = false;
+        }
     }
 
     // ------------------------------------------------------------------ microphone
@@ -328,18 +350,21 @@ public final class SpeechService {
     private static final class Listener extends Thread {
         private final Model model;
         private final List<String> grammarPhrases;
+        private final Predicate<String> exactMatcher;
         private final Predicate<String> matcher;
         private final Consumer<String> onHeard;
         private final Runnable onMatch;
         private final Consumer<String> onError;
         volatile boolean running = true;
+        volatile boolean finishing = false;
 
-        Listener(Model model, List<String> grammarPhrases, Predicate<String> matcher, Consumer<String> onHeard,
-                 Runnable onMatch, Consumer<String> onError) {
+        Listener(Model model, List<String> grammarPhrases, Predicate<String> exactMatcher, Predicate<String> matcher,
+                 Consumer<String> onHeard, Runnable onMatch, Consumer<String> onError) {
             super("NihongoQuest-Microphone");
             setDaemon(true);
             this.model = model;
             this.grammarPhrases = grammarPhrases;
+            this.exactMatcher = exactMatcher;
             this.matcher = matcher;
             this.onHeard = onHeard;
             this.onMatch = onMatch;
@@ -377,12 +402,11 @@ public final class SpeechService {
                         phrases.add("[unk]");
                         restricted = new Recognizer(model, f.getSampleRate(), GSON.toJson(phrases));
                     } catch (Throwable t) {
-                        restricted = null; // some models don't support word lists; the free recognizer still works
+                        restricted = null; // some models don't support word lists; the open recognizer still works
                     }
                 }
 
-                StringBuilder freeDone = new StringBuilder();
-                StringBuilder restrictedDone = new StringBuilder();
+                String lastUtterance = "";
                 byte[] raw = new byte[bufferBytes(f)];
                 byte[] mono = new byte[raw.length];
                 boolean wasMuted = false;
@@ -400,21 +424,29 @@ public final class SpeechService {
                         wasMuted = false;
                         free.reset();
                         if (restricted != null) restricted.reset();
-                        freeDone.setLength(0);
-                        restrictedDone.setLength(0);
+                        lastUtterance = "";
                         onHeard.accept("");
                     }
 
-                    String heardFree = feed(free, mono, m, freeDone);
-                    String heardRestricted = restricted != null ? feed(restricted, mono, m, restrictedDone) : "";
+                    // Each recognizer says "done" when you pause after speaking; only then do we judge.
+                    String freeFinal = free.acceptWaveForm(mono, m) ? field(free.getResult(), "text") : null;
+                    String listFinal = restricted != null && restricted.acceptWaveForm(mono, m)
+                            ? field(restricted.getResult(), "text") : null;
                     if (!running) break;
 
-                    onHeard.accept(heardFree.isBlank() ? heardRestricted : heardFree);
-                    if (matcher.test(heardFree) || matcher.test(heardRestricted)) {
-                        running = false;
-                        onMatch.run();
-                        break;
-                    }
+                    if (freeFinal != null && !freeFinal.isBlank()) lastUtterance = freeFinal;
+                    String partial = freeFinal != null ? "" : field(free.getPartialResult(), "partial");
+                    onHeard.accept(partial.isBlank() ? lastUtterance : partial);
+
+                    if (judge(freeFinal, listFinal)) return;
+                }
+
+                // Time ran out mid-word: judge what was being said at that moment.
+                if (finishing) {
+                    String freeFinal = field(free.getFinalResult(), "text");
+                    String listFinal = restricted != null ? field(restricted.getFinalResult(), "text") : null;
+                    if (!freeFinal.isBlank()) onHeard.accept(freeFinal);
+                    judge(freeFinal, listFinal);
                 }
             } catch (Throwable t) {
                 if (running) onError.accept("Speech recognition stopped: " + t.getMessage());
@@ -429,15 +461,15 @@ public final class SpeechService {
             }
         }
 
-        /** Feeds audio and returns everything heard so far in this quiz (final + partial). */
-        private static String feed(Recognizer rec, byte[] buf, int n, StringBuilder done) {
-            if (rec.acceptWaveForm(buf, n)) {
-                String text = field(rec.getResult(), "text");
-                if (!text.isBlank()) done.append(' ').append(text);
-                return done.toString().trim();
+        /** True (and reports the match) if either finished utterance counts as the word. */
+        private boolean judge(String freeFinal, String listFinal) {
+            boolean ok = (listFinal != null && !listFinal.isBlank() && exactMatcher.test(listFinal))
+                    || (freeFinal != null && !freeFinal.isBlank() && matcher.test(freeFinal));
+            if (ok) {
+                running = false;
+                onMatch.run();
             }
-            String partial = field(rec.getPartialResult(), "partial");
-            return (done + " " + partial).trim();
+            return ok;
         }
 
         private static String field(String json, String key) {

@@ -200,7 +200,10 @@ public final class Vocabulary {
         Set<String> nounForms = new LinkedHashSet<>();
         addForms(nounForms, noun);
         Set<String> accepted = new LinkedHashSet<>();
-        for (String c : colorForms) for (String n : nounForms) accepted.add(c + n);
+        for (String c : colorForms) for (String n : nounForms) {
+            accepted.add(c + n);
+            accepted.add(c + " " + n); // two words, as the speech recognizer writes them
+        }
 
         String colorWritten = color.kanji != null && !color.kanji.isBlank() ? color.kanji : color.kana;
         String nounWritten = noun.kanji != null && !noun.kanji.isBlank() ? noun.kanji : noun.kana;
@@ -226,6 +229,32 @@ public final class Vocabulary {
         boolean kanaOnly = Kana.isAllKana(name);
         String romaji = kanaOnly ? Kana.toRomaji(name) : null;
         return new Word(kanaOnly ? null : name, kanaOnly ? name : null, romaji, List.of(name), false);
+    }
+
+    /**
+     * Decoy words for the word-list recognizer: other vocabulary words that don't sound like
+     * the target, so "anything vaguely similar" can't be forced into the right answer.
+     */
+    public static List<String> decoys(Word target, int count, long seed) {
+        Data d = data;
+        String targetRomaji = target.romaji() == null ? "" : target.romaji().replaceAll("[^a-z]", "");
+        Set<String> targetForms = new java.util.HashSet<>();
+        for (String a : target.accepted()) targetForms.add(Kana.normalize(a));
+        List<Entry> pool = new ArrayList<>(d.exact.values());
+        pool.addAll(d.suffix.values());
+        pool.addAll(d.prefix.values());
+        Collections.shuffle(pool, new java.util.Random(seed));
+        Set<String> out = new LinkedHashSet<>();
+        for (Entry e : pool) {
+            if (out.size() >= count) break;
+            String r = e.romaji == null ? "" : e.romaji.replaceAll("[^a-z]", "");
+            if (r.isEmpty() || targetForms.contains(Kana.normalize(e.kana))) continue;
+            if (!targetRomaji.isEmpty() && (Kana.similarity(r, targetRomaji) >= 0.5
+                    || r.contains(targetRomaji) || targetRomaji.contains(r))) continue;
+            out.add(e.kana);
+            if (e.kanji != null && !e.kanji.isBlank()) out.add(e.kanji);
+        }
+        return new ArrayList<>(out);
     }
 
     public static boolean has(String itemId, boolean colorWords) {

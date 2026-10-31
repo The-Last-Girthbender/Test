@@ -33,7 +33,7 @@
   // "showKana": true,             // show the kana spelling, e.g. りんご
   // "showRomaji": true,           // show the Latin-letter reading, e.g. ringo
   // "showEnglish": true,          // show the item's normal in-game name
-  // "matchStrictness": 0.75,      // 0.0 = anything counts, 1.0 = must be exact
+  // "matchStrictness": 0.75,      // 0.5 = loose (lowest allowed), 1.0 = must be exact
   // "showPronunciation": true,    // show an English "sounds like" guide, e.g. reen-goh
   // "speakAtQuizStart": false,    // read the word aloud when a quiz starts
 

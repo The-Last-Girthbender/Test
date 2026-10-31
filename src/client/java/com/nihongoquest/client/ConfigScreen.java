@@ -133,9 +133,9 @@ public class ConfigScreen extends Screen {
         items.add(number("Quiz every", " pickups", 1, 1000, 1,
                 () -> cfg().quizEveryNPickups(), v -> cfg().quizEveryNPickups = v,
                 "A quiz happens on every Nth pickup of the same kind of item."));
-        items.add(number("Match needed", "%", 0, 100, 5,
+        items.add(number("Match needed", "%", 50, 100, 5,
                 () -> (int) Math.round(cfg().matchStrictness() * 100), v -> cfg().matchStrictness = v / 100.0,
-                "How close your pronunciation must be.\nLower = more forgiving, 100% = exact."));
+                "How close your pronunciation must be.\n50% = most forgiving, 100% = exact.\nOnly finished words are judged (pause briefly after speaking)."));
         items.add(cycle("Count", () -> cfg().countEveryItem() ? "Each item" : "Each pickup",
                 () -> cfg().countMode = cfg().countEveryItem() ? "pickups" : "items",
                 "Each pickup: picking up a stack counts once.\nEach item: a stack of 64 counts as 64."));
