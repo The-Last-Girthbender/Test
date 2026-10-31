@@ -44,6 +44,7 @@ public final class ClientChallenge {
     final Word word;
     final int totalTicks;
     final List<String> targets;
+    final List<String> romajiTargets;
     int ticksLeft;
     int amount;
     int removed;
@@ -68,6 +69,14 @@ public final class ClientChallenge {
         }
         if (word.kana() != null) t.add(Kana.normalize(word.kana()));
         this.targets = new ArrayList<>(t);
+        // Sound-based targets: the reading in romaji, so near-misses get partial credit.
+        Set<String> r = new LinkedHashSet<>();
+        for (String target : this.targets) {
+            if (Kana.isAllKana(target)) r.add(Kana.toRomaji(target).replace(" ", "").replace("'", ""));
+        }
+        if (word.romaji() != null) r.add(word.romaji().toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z]", ""));
+        r.remove("");
+        this.romajiTargets = new ArrayList<>(r);
         this.guide = word.kana() != null ? Pronunciation.guide(word.kana()) : null;
         this.tip = word.kana() != null ? Pronunciation.tip(word.kana(), word.romaji()) : null;
     }
@@ -138,11 +147,7 @@ public final class ClientChallenge {
         double strictness = cfg.matchStrictness();
         SpeechService.listen(
                 word.accepted(),
-                heardText -> {
-                    String h = Kana.normalize(heardText);
-                    for (String t : c.targets) if (Kana.matches(h, t, strictness)) return true;
-                    return false;
-                },
+                heardText -> c.isMatch(heardText, strictness),
                 heardText -> c.heard = heardText,
                 () -> mc.execute(() -> c.onRecognised()),
                 error -> mc.execute(() -> {
@@ -155,6 +160,21 @@ public final class ClientChallenge {
                     }
                 }));
         if (cfg.speakAtQuizStart()) VoiceService.speak(spoken(word));
+    }
+
+    /** Compares by spelling (kanji/kana) and by sound (romaji of the kana parts). */
+    boolean isMatch(String heardText, double strictness) {
+        String h = Kana.normalize(heardText);
+        if (h.isEmpty()) return false;
+        for (String t : targets) if (Kana.matches(h, t, strictness)) return true;
+        String hr = Kana.toRomaji(h).replace(" ", "").replace("'", "");
+        for (String t : romajiTargets) if (Kana.matches(hr, t, strictness)) return true;
+        return false;
+    }
+
+    private void logResult(String outcome) {
+        com.nihongoquest.NihongoQuest.LOGGER.info("Quiz {} ({}): {} — heard \"{}\"",
+                word.primary(), word.romaji(), outcome, heard == null ? "" : heard);
     }
 
     private void onRecognised() {
@@ -172,6 +192,7 @@ public final class ClientChallenge {
         SpeechService.stop();
         switch (p.outcome()) {
             case Payloads.OUTCOME_PASSED -> {
+                c.logResult("passed");
                 c.state = State.PASSED;
                 c.afterTicks = Math.max(c.afterTicks, 40);
                 chat(Component.literal("正解！ ").withStyle(ChatFormatting.GREEN, ChatFormatting.BOLD)
@@ -180,6 +201,7 @@ public final class ClientChallenge {
                         .append(wordLine(c.word)));
             }
             case Payloads.OUTCOME_FAILED -> {
+                c.logResult("failed");
                 c.state = State.FAILED;
                 c.removed = p.removed();
                 c.afterTicks = 100;

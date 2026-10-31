@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.nihongoquest.NihongoQuest;
 import com.nihongoquest.config.ModConfig;
+import com.nihongoquest.vocab.Kana;
 import org.vosk.LibVosk;
 import org.vosk.LogLevel;
 import org.vosk.Model;
@@ -86,7 +87,18 @@ public final class SpeechService {
         status = Status.LOADING;
         LOADER.submit(() -> {
             try {
-                LibVosk.setLogLevel(LogLevel.WARNINGS); // also loads the native library
+                // The speech library talks UTF-8, but JNA converts text with the system encoding
+                // (e.g. Windows-1252), which garbles Japanese in both directions. Make JNA use
+                // UTF-8 while the library registers its functions, then put the setting back.
+                String previous = System.getProperty("jna.encoding");
+                System.setProperty("jna.encoding", "UTF-8");
+                try {
+                    LibVosk.setLogLevel(LogLevel.WARNINGS); // also loads the native library
+                } finally {
+                    if (previous == null) System.clearProperty("jna.encoding");
+                    else System.setProperty("jna.encoding", previous);
+                }
+                logTextEncoding();
             } catch (Throwable t) {
                 fail(Status.ERROR, "native speech library could not load on this system (" + t.getMessage() + ")");
                 return;
@@ -124,6 +136,17 @@ public final class SpeechService {
                 fail(Status.ERROR, "model in " + dir + " could not be loaded (" + t.getMessage() + ")");
             }
         });
+    }
+
+    /** Logs which text encoding JNA uses for the speech library (should be UTF-8). */
+    private static void logTextEncoding() {
+        try {
+            Object enc = Class.forName("com.sun.jna.Native")
+                    .getMethod("getStringEncoding", Class.class).invoke(null, LibVosk.class);
+            NihongoQuest.LOGGER.info("Speech library text encoding: {}", enc);
+        } catch (Throwable t) {
+            NihongoQuest.LOGGER.info("Speech library text encoding: unknown ({})", t.getMessage());
+        }
     }
 
     private static void fail(Status s, String why) {
@@ -422,7 +445,9 @@ public final class SpeechService {
                 JsonElement el = JsonParser.parseString(json);
                 if (el.isJsonObject()) {
                     JsonObject o = el.getAsJsonObject();
-                    if (o.has(key)) return o.get(key).getAsString().replace("[unk]", "").trim();
+                    if (o.has(key)) {
+                        return Kana.repairMojibake(o.get(key).getAsString()).replace("[unk]", "").trim();
+                    }
                 }
             } catch (Exception ignored) {}
             return "";

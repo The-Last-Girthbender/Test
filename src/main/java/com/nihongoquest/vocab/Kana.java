@@ -155,6 +155,89 @@ public final class Kana {
         return 0;
     }
 
+    // --------------------------------------------------------------- encoding repair
+
+    /**
+     * Undoes the classic "UTF-8 read as Windows-1252" garbling (りんご -> ã‚Šã‚“ã”).
+     * Returns the text unchanged if it doesn't look garbled or can't be repaired.
+     */
+    public static String repairMojibake(String s) {
+        if (s == null || s.isEmpty()) return s;
+        boolean hasJapanese = false, hasLatinHigh = false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\uFFFD') hasLatinHigh = true;
+            else if (c >= '\u3000') hasJapanese = true;
+            else if (c >= '\u0080') hasLatinHigh = true;
+        }
+        if (hasJapanese || !hasLatinHigh) return s;
+
+        // Back to the original bytes. Five byte values have no Windows-1252 character and came
+        // through as U+FFFD; mark those as unknown (-1) and work them out while decoding.
+        java.nio.charset.Charset cp1252 = java.nio.charset.Charset.forName("windows-1252");
+        int[] bytes = new int[s.length() * 2];
+        int n = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\uFFFD') { bytes[n++] = -1; continue; }
+            byte[] b = String.valueOf(c).getBytes(cp1252);
+            if (b.length != 1 || (b[0] == '?' && c != '?')) {
+                if (c < 0x100) b = new byte[]{(byte) c}; // ISO-8859-1 style
+                else return s;                          // not mojibake after all
+            }
+            bytes[n++] = b[0] & 0xFF;
+        }
+
+        StringBuilder out = new StringBuilder();
+        int japanese = 0;
+        for (int i = 0; i < n; ) {
+            int lead = bytes[i];
+            int len = lead < 0 ? 3 : lead < 0x80 ? 1 : lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC0 ? 2 : 1;
+            if (i + len > n) len = n - i;
+            int cp = decodeGuessing(bytes, i, len);
+            if (cp < 0) { i++; continue; } // undecodable: drop it
+            out.appendCodePoint(cp);
+            if (cp >= 0x3000) japanese++;
+            i += len;
+        }
+        return japanese > 0 ? out.toString() : s;
+    }
+
+    private static final int[] UNDEFINED_1252 = {0x81, 0x8D, 0x8F, 0x90, 0x9D};
+
+    /** Decodes one UTF-8 sequence, trying the possible values for unknown bytes. Prefers kana. */
+    private static int decodeGuessing(int[] bytes, int start, int len) {
+        int unknown = 0;
+        for (int k = 0; k < len; k++) if (bytes[start + k] < 0) unknown++;
+        if (len == 1 && unknown == 0) return bytes[start];
+        int combos = (int) Math.pow(UNDEFINED_1252.length, unknown);
+        int best = -1, bestScore = -1;
+        int[] seq = new int[len];
+        for (int combo = 0; combo < combos; combo++) {
+            int rest = combo;
+            for (int k = 0; k < len; k++) {
+                int b = bytes[start + k];
+                if (b < 0) { b = UNDEFINED_1252[rest % UNDEFINED_1252.length]; rest /= UNDEFINED_1252.length; }
+                seq[k] = b;
+            }
+            int cp = utf8(seq, len);
+            if (cp < 0) continue;
+            int score = (cp >= 0x3041 && cp <= 0x30FF) ? 3 : (cp >= 0x4E00 && cp <= 0x9FFF) ? 2 : 1;
+            if (score > bestScore) { best = cp; bestScore = score; }
+        }
+        return best;
+    }
+
+    private static int utf8(int[] b, int len) {
+        if (len == 2 && (b[0] & 0xE0) == 0xC0 && (b[1] & 0xC0) == 0x80)
+            return ((b[0] & 0x1F) << 6) | (b[1] & 0x3F);
+        if (len == 3 && (b[0] & 0xF0) == 0xE0 && (b[1] & 0xC0) == 0x80 && (b[2] & 0xC0) == 0x80)
+            return ((b[0] & 0x0F) << 12) | ((b[1] & 0x3F) << 6) | (b[2] & 0x3F);
+        if (len == 4 && (b[0] & 0xF8) == 0xF0 && (b[1] & 0xC0) == 0x80 && (b[2] & 0xC0) == 0x80 && (b[3] & 0xC0) == 0x80)
+            return ((b[0] & 0x07) << 18) | ((b[1] & 0x3F) << 12) | ((b[2] & 0x3F) << 6) | (b[3] & 0x3F);
+        return -1;
+    }
+
     // --------------------------------------------------------------- matching
 
     /** Similarity in [0,1] based on Levenshtein distance. */
@@ -188,6 +271,8 @@ public final class Kana {
         if (heard.isEmpty() || target.isEmpty()) return false;
         if (heard.contains(target)) return true;
         if (strictness >= 1.0) return false;
+        // Even at 0% at least one sound has to line up; otherwise random noise would pass.
+        strictness = Math.max(strictness, 0.01);
         int len = target.length();
         if (heard.length() <= len + 1) return similarity(heard, target) >= strictness;
         // Slide a window a little wider/narrower than the target across what was heard.
