@@ -61,6 +61,26 @@ public final class ClientChallenge {
     private double strictnessUsed;
     /** Set when a finished utterance was much shorter than the word: the player probably paused mid-word. */
     volatile boolean splitWarning;
+
+    // ---- accuracy shown to the player: one % per attempt (finished utterance) ----
+    /** Score of the latest attempt, 0-100, or -1 before the first attempt. */
+    volatile int lastPct = -1;
+    /** Best attempt so far in this quiz, 0-100, or -1. */
+    volatile int bestPct = -1;
+    volatile long lastPctTime;
+    int neededPct;
+
+    /** The word list must be at least this sure of its pick to pass you. */
+    private static final double LIST_MIN_CONFIDENCE = 0.5;
+
+    /** Records one attempt's score. Both recognizers report the same utterance, so keep the higher one. */
+    private void recordAttempt(int pct) {
+        long now = System.currentTimeMillis();
+        if (now - lastPctTime < 400 && pct < lastPct) return; // same utterance, already have a better score
+        lastPct = pct;
+        lastPctTime = now;
+        if (pct > bestPct) bestPct = pct;
+    }
     final String tip;
 
     private ClientChallenge(int id, ItemStack icon, Word word, int totalTicks, int amount) {
@@ -155,12 +175,13 @@ public final class ClientChallenge {
 
         double strictness = cfg.matchStrictness();
         c.strictnessUsed = strictness;
+        c.neededPct = (int) Math.round(strictness * 100);
         List<String> phrases = new ArrayList<>(word.accepted());
         if (word.kana() != null && !phrases.contains(word.kana())) phrases.add(word.kana());
         phrases.addAll(Vocabulary.decoys(word, 20, p.challengeId()));
         SpeechService.listen(
                 phrases,
-                heardText -> c.isExact(heardText),
+                (heardText, confidence) -> c.isExact(heardText, confidence),
                 heardText -> c.isMatch(heardText, strictness),
                 heardText -> c.heard = heardText,
                 () -> mc.execute(() -> c.onRecognised()),
@@ -177,12 +198,17 @@ public final class ClientChallenge {
     }
 
     /** The word-list recognizer (target + decoys) picked one of the target's own spellings. */
-    boolean isExact(String heardText) {
+    boolean isExact(String heardText, double confidence) {
         String h = Kana.normalize(heardText);
-        boolean ok = false;
-        for (String t : targets) if (h.equals(t)) ok = true;
-        heardLog.add("word list: \"" + heardText + "\"" + (ok ? " ✔" : ""));
-        if (ok && passReason == null) passReason = "word list picked \"" + heardText + "\" (out of the word + 20 decoys)";
+        boolean picked = false;
+        for (String t : targets) if (h.equals(t)) picked = true;
+        int pct = (int) Math.round(confidence * 100);
+        boolean ok = picked && confidence >= LIST_MIN_CONFIDENCE;
+        heardLog.add("word list: \"" + heardText + "\" " + pct + "% sure" + (ok ? " ✔" : picked ? " (too unsure)" : ""));
+        if (picked) recordAttempt(pct);
+        if (ok && passReason == null) {
+            passReason = "word list picked \"" + heardText + "\", " + pct + "% sure (out of the word + 20 decoys)";
+        }
         return ok;
     }
 
@@ -199,6 +225,7 @@ public final class ClientChallenge {
 
         int pct = (int) Math.round(score * 100);
         heardLog.add("open: \"" + heardText + "\" " + pct + "%" + (ok ? " ✔" : ""));
+        recordAttempt(pct);
         if (score >= bestScore) {
             bestScore = score;
             bestHeard = heardText;
@@ -245,8 +272,9 @@ public final class ClientChallenge {
                 c.logResult("passed");
                 c.state = State.PASSED;
                 c.afterTicks = Math.max(c.afterTicks, 40);
-                chat(Component.literal("正解！ ").withStyle(ChatFormatting.GREEN, ChatFormatting.BOLD)
-                        .append(c.itemName.copy().withStyle(ChatFormatting.WHITE))
+                MutableComponent ok = Component.literal("正解！ ").withStyle(ChatFormatting.GREEN, ChatFormatting.BOLD);
+                if (c.lastPct >= 0) ok.append(Component.literal(c.lastPct + "% ").withStyle(ChatFormatting.GREEN));
+                chat(ok.append(c.itemName.copy().withStyle(ChatFormatting.WHITE))
                         .append(Component.literal(" = ").withStyle(ChatFormatting.GRAY))
                         .append(wordLine(c.word)));
             }
@@ -261,6 +289,10 @@ public final class ClientChallenge {
                     msg.append(Component.literal("Lost " + p.removed() + "× ").withStyle(ChatFormatting.RED))
                             .append(c.itemName.copy().withStyle(ChatFormatting.WHITE))
                             .append(Component.literal(". ").withStyle(ChatFormatting.RED));
+                }
+                if (c.bestPct >= 0) {
+                    msg.append(Component.literal("Best try " + c.bestPct + "% (needed " + c.neededPct + "%). ")
+                            .withStyle(ChatFormatting.GOLD));
                 }
                 msg.append(Component.literal("The word was ").withStyle(ChatFormatting.GRAY)).append(wordLine(c.word));
                 chat(msg);

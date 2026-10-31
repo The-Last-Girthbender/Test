@@ -111,6 +111,11 @@ final class ChallengeHud {
             if (!h.isEmpty()) help = h.toString();
         }
 
+        // Accuracy of the latest attempt (or the best one, once the quiz is over).
+        int shownPct = c.state == State.FAILED ? c.bestPct : c.lastPct;
+        boolean showAccuracy = shownPct >= 0 && c.state != State.WAITING;
+        String accLabel = c.state == State.FAILED ? "Best try" : c.state == State.PASSED ? "Accuracy" : "Last try";
+
         // Microphone level problems: silent, too loud, or very quiet.
         String micWarning = MicIcon.levelNote(listening);
         long since = SpeechService.listeningSince;
@@ -131,6 +136,11 @@ final class ChallengeHud {
         if (breath != null) {
             contentW = Math.max(contentW, font.width(breath));
             contentH += 11;
+        }
+        int accBarW = 100;
+        if (showAccuracy) {
+            contentW = Math.max(contentW, font.width(accLabel + " 100%") + accBarW + 8);
+            contentH += 13;
         }
         if (micWarning != null) {
             contentW = Math.max(contentW, font.width(micWarning));
@@ -196,6 +206,9 @@ final class ChallengeHud {
             g.centeredText(font, Component.literal(status), cx, y, statusColor);
             y += 11;
         }
+        if (showAccuracy) {
+            y = drawAccuracy(g, font, c, accLabel, shownPct, accBarW, cx, y);
+        }
         if (breath != null) {
             g.centeredText(font, breath, cx, y, breathColor);
             y += 11;
@@ -207,5 +220,32 @@ final class ChallengeHud {
         if (help != null) {
             g.centeredText(font, help, cx, y, 0xFF8888AA);
         }
+    }
+
+    /**
+     * "Last try [######|---] 72%": a bar filled to the score, with a white tick at the
+     * Match Needed level. Green = enough to pass, yellow = close, red = far off.
+     */
+    private static int drawAccuracy(GuiGraphicsExtractor g, Font font, ClientChallenge c, String label,
+                                    int pct, int barW, int cx, int y) {
+        int needed = c.neededPct;
+        int color = pct >= needed ? GREEN : pct >= needed - 20 ? 0xFFFFCC33 : RED;
+        String pctText = pct + "%";
+        String labelText = label + " ";
+        int totalW = font.width(labelText) + barW + 4 + font.width("100%");
+        int x = cx - totalW / 2;
+
+        g.text(font, labelText, x, y + 1, GRAY, true);
+        int bx = x + font.width(labelText);
+        int barY = y + 2;
+        // A just-finished attempt flashes brighter for a moment.
+        boolean fresh = System.currentTimeMillis() - c.lastPctTime < 600 && c.state == State.LISTENING;
+        g.fill(bx - 1, barY - 1, bx + barW + 1, barY + 7, fresh ? 0xFF8888AA : 0xFF555566);
+        g.fill(bx, barY, bx + barW, barY + 6, 0xFF222230);
+        g.fill(bx, barY, bx + Math.max(1, barW * Math.min(100, pct) / 100), barY + 6, color);
+        int tick = bx + barW * Math.min(100, needed) / 100;
+        g.fill(tick, barY - 2, tick + 1, barY + 8, WHITE);
+        g.text(font, pctText, bx + barW + 4, y + 1, color, true);
+        return y + 13;
     }
 }

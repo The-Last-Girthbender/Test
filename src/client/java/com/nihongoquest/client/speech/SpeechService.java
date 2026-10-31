@@ -197,16 +197,17 @@ public final class SpeechService {
      */
     public static synchronized void listen(List<String> grammarPhrases, Predicate<String> matcher,
                                            Consumer<String> onHeard, Runnable onMatch, Consumer<String> onError) {
-        listen(grammarPhrases, matcher, matcher, onHeard, onMatch, onError);
+        listen(grammarPhrases, (text, conf) -> matcher.test(text), matcher, onHeard, onMatch, onError);
     }
 
     /**
      * @param grammarPhrases the target's spellings plus decoy words; the word-list recognizer must pick one
-     * @param exactMatcher   judges the word-list recognizer's pick (should be an exact check)
+     * @param exactMatcher   judges the word-list recognizer's pick and its confidence (0-1)
      * @param matcher        judges what the open recognizer heard (may be fuzzy)
      * Only complete utterances (after a pause) are judged, never half-finished guesses.
      */
-    public static synchronized void listen(List<String> grammarPhrases, Predicate<String> exactMatcher,
+    public static synchronized void listen(List<String> grammarPhrases,
+                                           java.util.function.BiPredicate<String, Double> exactMatcher,
                                            Predicate<String> matcher, Consumer<String> onHeard,
                                            Runnable onMatch, Consumer<String> onError) {
         stop();
@@ -352,7 +353,7 @@ public final class SpeechService {
     private static final class Listener extends Thread {
         private final Model model;
         private final List<String> grammarPhrases;
-        private final Predicate<String> exactMatcher;
+        private final java.util.function.BiPredicate<String, Double> exactMatcher;
         private final Predicate<String> matcher;
         private final Consumer<String> onHeard;
         private final Runnable onMatch;
@@ -360,7 +361,8 @@ public final class SpeechService {
         volatile boolean running = true;
         volatile boolean finishing = false;
 
-        Listener(Model model, List<String> grammarPhrases, Predicate<String> exactMatcher, Predicate<String> matcher,
+        Listener(Model model, List<String> grammarPhrases, java.util.function.BiPredicate<String, Double> exactMatcher,
+                 Predicate<String> matcher,
                  Consumer<String> onHeard, Runnable onMatch, Consumer<String> onError) {
             super("NihongoQuest-Microphone");
             setDaemon(true);
@@ -403,6 +405,7 @@ public final class SpeechService {
                         List<String> phrases = new ArrayList<>(grammarPhrases);
                         phrases.add("[unk]");
                         restricted = new Recognizer(model, f.getSampleRate(), GSON.toJson(phrases));
+                        restricted.setWords(true); // include per-word confidence in results
                     } catch (Throwable t) {
                         restricted = null; // some models don't support word lists; the open recognizer still works
                     }
@@ -433,7 +436,7 @@ public final class SpeechService {
                     // Each recognizer says "done" when you pause after speaking; only then do we judge.
                     String freeFinal = free.acceptWaveForm(mono, m) ? field(free.getResult(), "text") : null;
                     String listFinal = restricted != null && restricted.acceptWaveForm(mono, m)
-                            ? field(restricted.getResult(), "text") : null;
+                            ? restricted.getResult() : null; // raw JSON: text + confidence
                     if (!running) break;
 
                     if (freeFinal != null && !freeFinal.isBlank()) lastUtterance = freeFinal;
@@ -446,7 +449,7 @@ public final class SpeechService {
                 // Time ran out mid-word: judge what was being said at that moment.
                 if (finishing) {
                     String freeFinal = field(free.getFinalResult(), "text");
-                    String listFinal = restricted != null ? field(restricted.getFinalResult(), "text") : null;
+                    String listFinal = restricted != null ? restricted.getFinalResult() : null;
                     if (!freeFinal.isBlank()) onHeard.accept(freeFinal);
                     judge(freeFinal, listFinal);
                 }
@@ -466,7 +469,11 @@ public final class SpeechService {
         /** True (and reports the match) if either finished utterance counts as the word. */
         private boolean judge(String freeFinal, String listFinal) {
             // Check both (not short-circuited) so everything heard gets recorded for the log.
-            boolean listOk = listFinal != null && !listFinal.isBlank() && exactMatcher.test(listFinal);
+            boolean listOk = false;
+            if (listFinal != null) {
+                String text = field(listFinal, "text");
+                if (!text.isBlank()) listOk = exactMatcher.test(text, confidence(listFinal));
+            }
             boolean freeOk = freeFinal != null && !freeFinal.isBlank() && matcher.test(freeFinal);
             boolean ok = listOk || freeOk;
             if (ok) {
@@ -474,6 +481,27 @@ public final class SpeechService {
                 onMatch.run();
             }
             return ok;
+        }
+
+        /** Average per-word confidence (0-1) in a result, or 1.0 if the model didn't report any. */
+        private static double confidence(String json) {
+            try {
+                JsonObject o = JsonParser.parseString(json).getAsJsonObject();
+                if (!o.has("result") || !o.get("result").isJsonArray()) return 1.0;
+                double sum = 0;
+                int n = 0;
+                for (JsonElement w : o.getAsJsonArray("result")) {
+                    if (!w.isJsonObject()) continue;
+                    JsonObject wo = w.getAsJsonObject();
+                    String word = wo.has("word") ? wo.get("word").getAsString() : "";
+                    if (word.equals("[unk]") || !wo.has("conf")) continue;
+                    sum += wo.get("conf").getAsDouble();
+                    n++;
+                }
+                return n == 0 ? 1.0 : Math.max(0.0, Math.min(1.0, sum / n));
+            } catch (Exception e) {
+                return 1.0;
+            }
         }
 
         private static String field(String json, String key) {

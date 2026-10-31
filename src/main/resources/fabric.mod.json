@@ -6,6 +6,7 @@
   "description": "Learn Japanese while you play. Every few pickups of an item, you have a limited time to say its Japanese name into your microphone, or the new items vanish.",
   "authors": ["You"],
   "license": "MIT",
+  "icon": "assets/nihongoquest/icon.png",
   "environment": "*",
   "entrypoints": {
     "main": ["com.nihongoquest.NihongoQuest"],
