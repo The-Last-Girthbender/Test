@@ -148,8 +148,8 @@ final class ChallengeHud {
         int contentW = 22 + font.width(title) + (secs != null ? 12 + font.width(secs) : 0);
         int contentH = HEADER_H + 7;
         for (Line l : lines) {
-            int w = (int) (font.width(l.text) * l.scale) + (l.pill ? 12 : 0);
-            contentW = Math.max(contentW, w);
+            int lineW = (int) (font.width(l.text) * l.scale) + (l.pill ? 12 : 0);
+            contentW = Math.max(contentW, lineW);
             contentH += l.pill ? 14 : (int) (10 * l.scale) + 2;
         }
         contentH += 4 + 6; // timer bar + gap
