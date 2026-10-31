@@ -6,7 +6,11 @@ import com.nihongoquest.config.ModConfig;
 import com.nihongoquest.network.Payloads.ChallengeResolved;
 import com.nihongoquest.network.Payloads.ChallengeStart;
 import com.nihongoquest.vocab.Vocabulary;
+import com.mojang.blaze3d.platform.InputConstants;
+import com.nihongoquest.client.speech.VoiceService;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.minecraft.client.KeyMapping;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -18,8 +22,24 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 
 public class NihongoQuestClient implements ClientModInitializer {
+    private static KeyMapping hearKey;
+
+    /** Display name of the "hear it" key (e.g. "H"), or null if unbound. */
+    static String hearKeyName() {
+        if (hearKey == null || hearKey.isUnbound()) return null;
+        return hearKey.getTranslatedKeyMessage().getString();
+    }
+
     @Override
     public void onInitializeClient() {
+        KeyMapping.Category category = KeyMapping.Category.register(NihongoQuest.id("main"));
+        hearKey = KeyMappingHelper.registerKeyMapping(
+                new KeyMapping("key.nihongoquest.hear", InputConstants.KEY_H, category));
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            while (hearKey.consumeClick()) ClientChallenge.hear();
+        });
+        VoiceService.check();
+
         ClientPlayNetworking.registerGlobalReceiver(ChallengeStart.TYPE,
                 (payload, context) -> ClientChallenge.onStart(payload));
         ClientPlayNetworking.registerGlobalReceiver(ChallengeResolved.TYPE,

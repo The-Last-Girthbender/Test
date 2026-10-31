@@ -198,6 +198,19 @@ public final class SpeechService {
     public static volatile long listeningSince;  // System.currentTimeMillis() when the mic opened, 0 if not open
     public static volatile String openedMic = "";
 
+    // While the computer reads a word aloud, audio is thrown away so the quiz can't "hear" it.
+    private static volatile boolean voiceActive;
+    private static volatile long mutedUntil;
+
+    public static void muteForVoice(boolean speaking) {
+        voiceActive = speaking;
+        if (!speaking) mutedUntil = System.currentTimeMillis() + 500; // let the echo die down
+    }
+
+    private static boolean muted() {
+        return voiceActive || System.currentTimeMillis() < mutedUntil;
+    }
+
     /** A microphone that's open and recording, plus the format it agreed to. */
     private record OpenMic(TargetDataLine line, AudioFormat format, String name) {}
 
@@ -349,10 +362,25 @@ public final class SpeechService {
                 StringBuilder restrictedDone = new StringBuilder();
                 byte[] raw = new byte[bufferBytes(f)];
                 byte[] mono = new byte[raw.length];
+                boolean wasMuted = false;
                 while (running) {
                     int n = mic.line().read(raw, 0, raw.length);
                     if (n <= 0) continue;
                     int m = toMono(raw, n, f.getChannels(), mono);
+
+                    if (muted()) {
+                        wasMuted = true;
+                        continue;
+                    }
+                    if (wasMuted) {
+                        // Forget anything heard while the voice was playing.
+                        wasMuted = false;
+                        free.reset();
+                        if (restricted != null) restricted.reset();
+                        freeDone.setLength(0);
+                        restrictedDone.setLength(0);
+                        onHeard.accept("");
+                    }
 
                     String heardFree = feed(free, mono, m, freeDone);
                     String heardRestricted = restricted != null ? feed(restricted, mono, m, restrictedDone) : "";

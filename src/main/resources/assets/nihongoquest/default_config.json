@@ -11,10 +11,11 @@
   //  DIFFICULTY PRESET  —  the easiest way to set things up.
   //
   //   "beginner" : 45 s to answer, shows kanji + kana + romaji + English,
+  //                a "sounds like" guide, reads the word aloud at the start,
   //                forgiving pronunciation check (60% match is enough).
-  //   "normal"   : 30 s to answer, shows kanji + kana + romaji + English,
-  //                moderate check (75% match).
-  //   "advanced" : 20 s, quiz every 5 pickups, NO romaji (read the kana!),
+  //   "normal"   : 30 s to answer, shows kanji + kana + romaji + English and the
+  //                "sounds like" guide; moderate check (75% match).
+  //   "advanced" : 20 s, quiz every 5 pickups, NO romaji or guide (read the kana!),
   //                strict check (90% match).
   //   "expert"   : 15 s, quiz every 3 pickups, ONLY the English name is shown —
   //                you must remember the Japanese word yourself. Very strict.
@@ -33,6 +34,8 @@
   // "showRomaji": true,           // show the Latin-letter reading, e.g. ringo
   // "showEnglish": true,          // show the item's normal in-game name
   // "matchStrictness": 0.75,      // 0.0 = anything counts, 1.0 = must be exact
+  // "showPronunciation": true,    // show an English "sounds like" guide, e.g. reen-goh
+  // "speakAtQuizStart": false,    // read the word aloud when a quiz starts
 
   // ---------------------------------------------------------------------------
   //  WHEN QUIZZES HAPPEN
@@ -92,5 +95,17 @@
   // Distance in pixels of the quiz panel from the top of the screen.
   "hudYOffset": 6,
   // Show what the microphone heard (helps you see how you're being understood).
-  "showWhatWasHeard": true
+  "showWhatWasHeard": true,
+
+  // ---------------------------------------------------------------------------
+  //  PRONUNCIATION HELP
+  //  Press H during a quiz (change the key in Options > Controls) to hear the word.
+  //  Uses your computer's Japanese voice. On Windows, add one in
+  //  Settings > Time & language > Language & region > Add a language > Japanese
+  //  (tick "Text-to-speech"), then restart Minecraft.
+  // ---------------------------------------------------------------------------
+  // Read the correct word aloud when you run out of time.
+  "speakOnFail": true,
+  // Voice speed from -5 (slowest) to 5 (fastest). 0 = normal speed.
+  "voiceSpeed": -2
 }

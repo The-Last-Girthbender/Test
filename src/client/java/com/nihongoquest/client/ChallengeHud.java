@@ -2,6 +2,7 @@ package com.nihongoquest.client;
 
 import com.nihongoquest.client.ClientChallenge.State;
 import com.nihongoquest.client.speech.SpeechService;
+import com.nihongoquest.client.speech.VoiceService;
 import com.nihongoquest.config.ModConfig;
 import com.nihongoquest.vocab.Vocabulary.Word;
 import net.minecraft.client.DeltaTracker;
@@ -50,6 +51,9 @@ final class ChallengeHud {
         if ((cfg.showRomaji() || reveal) && w.romaji() != null && !w.romaji().isBlank()) {
             lines.add(new Line(w.romaji(), AQUA, 1f));
         }
+        if ((cfg.showPronunciation() || reveal) && c.guide != null) {
+            lines.add(new Line("sounds like: " + c.guide, 0xFF88EE88, 1f));
+        }
         if (cfg.showEnglish() || reveal || (!kanjiShown && !kanaShown)) {
             String eng = c.itemName.getString() + (c.amount > 1 ? "  ×" + c.amount : "");
             lines.add(new Line(eng, GRAY, 1f));
@@ -80,6 +84,20 @@ final class ChallengeHud {
 
         String header = "日本語で言って！  Say it in Japanese!";
 
+        // Small help line: the tricky-sound tip and the "hear it" key.
+        String help = null;
+        if (c.state == State.LISTENING || reveal) {
+            StringBuilder h = new StringBuilder();
+            if (cfg.showPronunciation() && c.tip != null) h.append(c.tip);
+            String key = NihongoQuestClient.hearKeyName();
+            if (key != null && VoiceService.status() != VoiceService.Status.NO_JAPANESE_VOICE
+                    && VoiceService.status() != VoiceService.Status.UNSUPPORTED) {
+                if (!h.isEmpty()) h.append("   ");
+                h.append("[").append(key).append("] hear it");
+            }
+            if (!h.isEmpty()) help = h.toString();
+        }
+
         // Microphone sending only silence for 3+ seconds: almost always Windows/macOS mic privacy.
         String micWarning = null;
         long since = SpeechService.listeningSince;
@@ -101,6 +119,10 @@ final class ChallengeHud {
         if (c.state == State.LISTENING) contentH += 6; // mic level bar
         if (micWarning != null) {
             contentW = Math.max(contentW, font.width(micWarning));
+            contentH += 11;
+        }
+        if (help != null) {
+            contentW = Math.max(contentW, font.width(help));
             contentH += 11;
         }
         int panelW = Math.min(g.guiWidth() - 8, contentW + pad * 2);
@@ -164,6 +186,10 @@ final class ChallengeHud {
         }
         if (micWarning != null) {
             g.centeredText(font, micWarning, cx, y, RED);
+            y += 11;
+        }
+        if (help != null) {
+            g.centeredText(font, help, cx, y, 0xFF8888AA);
         }
     }
 }

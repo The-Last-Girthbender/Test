@@ -2,6 +2,7 @@ package com.nihongoquest.client;
 
 import com.nihongoquest.NihongoQuest;
 import com.nihongoquest.client.speech.SpeechService;
+import com.nihongoquest.client.speech.VoiceService;
 import com.nihongoquest.config.ModConfig;
 import com.nihongoquest.config.ModConfig.Preset;
 import net.minecraft.ChatFormatting;
@@ -66,20 +67,26 @@ public class ConfigScreen extends Screen {
         int cx = this.width / 2;
 
         // Page tabs
-        String[] tabs = {"Quiz", "Display & Speech"};
+        String[] tabs = {"Quiz", "Display & Mic", "Pronunciation"};
+        int totalW = COL_W * 2 + 10;
+        int tabW = (totalW - 10) / 3;
         for (int i = 0; i < tabs.length; i++) {
             final int index = i;
             Button tab = Button.builder(Component.literal(tabs[i]), b -> {
                 stopTest();
                 page = index;
                 Minecraft.getInstance().gui.setScreen(new ConfigScreen(parent));
-            }).bounds(cx - COL_W - 5 + i * (COL_W + 10), 26, COL_W, 20).build();
+            }).bounds(cx - COL_W - 5 + i * (tabW + 5), 26, tabW, 20).build();
             tab.active = page != i;
             addRenderableWidget(tab);
         }
 
         int top = 56;
-        List<Consumer<int[]>> items = page == 0 ? quizPage() : displayPage();
+        List<Consumer<int[]>> items = switch (page) {
+            case 0 -> quizPage();
+            case 1 -> displayPage();
+            default -> pronunciationPage();
+        };
         for (int i = 0; i < items.size(); i++) {
             int col = i % 2;
             int row = i / 2;
@@ -144,6 +151,42 @@ public class ConfigScreen extends Screen {
                 "Add the color to colored items, e.g. red wool = 赤い羊毛 (akai youmou)."));
         return items;
     }
+
+    private List<Consumer<int[]>> pronunciationPage() {
+        List<Consumer<int[]>> items = new ArrayList<>();
+        items.add(toggle("Sounds-like guide", () -> cfg().showPronunciation(), v -> cfg().showPronunciation = v,
+                "Show an English respelling under the word, e.g.\n"
+                        + "りんご = reen-goh, はっぱ = hahp-pah, ケーキ = kehh-kee.\n"
+                        + "Doubled vowels (ahh, ooo) are held twice as long."));
+        items.add(toggle("Read aloud at start", () -> cfg().speakAtQuizStart(), v -> cfg().speakAtQuizStart = v,
+                "Your computer says the word when a quiz starts, then you repeat it.\n"
+                        + "The microphone ignores the computer's voice."));
+        items.add(toggle("Read aloud on fail", () -> cfg().speakOnFail, v -> cfg().speakOnFail = v,
+                "Hear the correct word when you run out of time."));
+        items.add(number("Voice speed", "", -5, 5, 1,
+                () -> cfg().voiceSpeed(), v -> cfg().voiceSpeed = v,
+                "-5 = slowest, 0 = normal, 5 = fastest."));
+        items.add(at -> addRenderableWidget(Button.builder(Component.literal("Test voice: こんにちは"), btn -> {
+            if (!VoiceService.speak("こんにちは")) voiceMessage = VoiceService.unavailableReason();
+            else voiceMessage = null;
+        }).bounds(at[0], at[1], COL_W, 20).tooltip(Tooltip.create(Component.literal(
+                "Plays \"konnichiwa\" with your computer's Japanese voice."))).build()));
+        items.add(at -> {
+            Button b = Button.builder(Component.empty(), btn -> {})
+                    .bounds(at[0], at[1], COL_W, 20).tooltip(Tooltip.create(Component.literal(
+                            "Press this key during a quiz to hear the word.\n"
+                                    + "Change it in Options > Controls > Key Binds."))).build();
+            b.active = false;
+            addRenderableWidget(b);
+            refreshers.add(() -> {
+                String k = NihongoQuestClient.hearKeyName();
+                b.setMessage(label("Hear-it key", k == null ? "not set" : k));
+            });
+        });
+        return items;
+    }
+
+    private volatile String voiceMessage;
 
     private List<Consumer<int[]>> displayPage() {
         List<Consumer<int[]>> items = new ArrayList<>();
@@ -345,6 +388,20 @@ public class ConfigScreen extends Screen {
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
         super.extractRenderState(graphics, mouseX, mouseY, delta);
         if (testing || testError != null) drawTest(graphics);
+        if (page == 2) {
+            String msg = voiceMessage;
+            VoiceService.Status vs = VoiceService.status();
+            if (msg == null && (vs == VoiceService.Status.NO_JAPANESE_VOICE || vs == VoiceService.Status.UNSUPPORTED)) {
+                msg = VoiceService.unavailableReason();
+            }
+            if (msg != null) {
+                int y = this.height - 76;
+                for (var line : this.font.split(Component.literal(msg), Math.min(this.width - 20, 320))) {
+                    graphics.centeredText(this.font, line, this.width / 2, y, 0xFFFFAA55);
+                    y += 10;
+                }
+            }
+        }
         graphics.centeredText(this.font, this.title, this.width / 2, 10, 0xFFFFFFFF);
         String hint = "Hover over a setting for an explanation. Saved when you click Done.";
         graphics.centeredText(this.font, hint, this.width / 2, this.height - 42, 0xFFAAAAAA);

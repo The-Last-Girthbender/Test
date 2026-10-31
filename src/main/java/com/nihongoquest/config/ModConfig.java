@@ -36,6 +36,8 @@ public final class ModConfig {
     public Boolean showRomaji;
     public Boolean showEnglish;
     public Double matchStrictness;
+    public Boolean showPronunciation;
+    public Boolean speakAtQuizStart;
 
     // ---- when quizzes happen ----
     public boolean quizOnFirstPickup = false;
@@ -57,6 +59,10 @@ public final class ModConfig {
     public boolean playSounds = true;
     public int hudYOffset = 6;
     public boolean showWhatWasHeard = true;
+
+    // ---- pronunciation help ----
+    public boolean speakOnFail = true;
+    public int voiceSpeed = -2;
 
     public static ModConfig get() {
         return instance;
@@ -115,6 +121,8 @@ public final class ModConfig {
             values.put("showRomaji", c.showRomaji);
             values.put("showEnglish", c.showEnglish);
             values.put("matchStrictness", c.matchStrictness);
+            values.put("showPronunciation", c.showPronunciation);
+            values.put("speakAtQuizStart", c.speakAtQuizStart);
             values.put("quizOnFirstPickup", c.quizOnFirstPickup);
             values.put("countMode", c.countEveryItem() ? "items" : "pickups");
             values.put("ignoreCreativeMode", c.ignoreCreativeMode);
@@ -126,6 +134,8 @@ public final class ModConfig {
             values.put("playSounds", c.playSounds);
             values.put("hudYOffset", c.hudYOffset);
             values.put("showWhatWasHeard", c.showWhatWasHeard);
+            values.put("speakOnFail", c.speakOnFail);
+            values.put("voiceSpeed", c.voiceSpeed);
             for (var e : values.entrySet()) {
                 text = ConfigWriter.set(text, e.getKey(), e.getValue() == null ? null : out.toJson(e.getValue()));
             }
@@ -150,22 +160,26 @@ public final class ModConfig {
         showRomaji = null;
         showEnglish = null;
         matchStrictness = null;
+        showPronunciation = null;
+        speakAtQuizStart = null;
     }
 
     public boolean hasOverrides() {
         return timeLimitSeconds != null || quizEveryNPickups != null || showKanji != null || showKana != null
-                || showRomaji != null || showEnglish != null || matchStrictness != null;
+                || showRomaji != null || showEnglish != null || matchStrictness != null
+                || showPronunciation != null || speakAtQuizStart != null;
     }
 
     // ------------------------------------------------------------------ presets
 
     public record Preset(String name, int timeLimitSeconds, int quizEvery, boolean kanji, boolean kana,
-                         boolean romaji, boolean english, double strictness) {}
+                         boolean romaji, boolean english, double strictness,
+                         boolean pronunciation, boolean speakAtStart) {}
 
-    public static final Preset BEGINNER = new Preset("beginner", 45, 10, true, true, true, true, 0.60);
-    public static final Preset NORMAL   = new Preset("normal",   30, 10, true, true, true, true, 0.75);
-    public static final Preset ADVANCED = new Preset("advanced", 20,  5, true, true, false, true, 0.90);
-    public static final Preset EXPERT   = new Preset("expert",   15,  3, false, false, false, true, 0.95);
+    public static final Preset BEGINNER = new Preset("beginner", 45, 10, true, true, true, true, 0.60, true, true);
+    public static final Preset NORMAL   = new Preset("normal",   30, 10, true, true, true, true, 0.75, true, false);
+    public static final Preset ADVANCED = new Preset("advanced", 20,  5, true, true, false, true, 0.90, false, false);
+    public static final Preset EXPERT   = new Preset("expert",   15,  3, false, false, false, true, 0.95, false, false);
     public static final List<Preset> PRESETS = List.of(BEGINNER, NORMAL, ADVANCED, EXPERT);
 
     public Preset preset() {
@@ -192,6 +206,13 @@ public final class ModConfig {
     public boolean showKana()    { return showKana    != null ? showKana    : preset().kana(); }
     public boolean showRomaji()  { return showRomaji  != null ? showRomaji  : preset().romaji(); }
     public boolean showEnglish() { return showEnglish != null ? showEnglish : preset().english(); }
+    public boolean showPronunciation() { return showPronunciation != null ? showPronunciation : preset().pronunciation(); }
+    public boolean speakAtQuizStart() { return speakAtQuizStart != null ? speakAtQuizStart : preset().speakAtStart(); }
+
+    /** Voice speed from -5 (slowest) to 5 (fastest); 0 is normal. */
+    public int voiceSpeed() {
+        return Math.max(-5, Math.min(5, voiceSpeed));
+    }
 
     public double matchStrictness() {
         double v = matchStrictness != null ? matchStrictness : preset().strictness();

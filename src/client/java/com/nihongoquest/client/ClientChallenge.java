@@ -1,12 +1,14 @@
 package com.nihongoquest.client;
 
 import com.nihongoquest.client.speech.SpeechService;
+import com.nihongoquest.client.speech.VoiceService;
 import com.nihongoquest.config.ModConfig;
 import com.nihongoquest.network.Payloads;
 import com.nihongoquest.network.Payloads.ChallengeAnswer;
 import com.nihongoquest.network.Payloads.ChallengeResolved;
 import com.nihongoquest.network.Payloads.ChallengeStart;
 import com.nihongoquest.vocab.Kana;
+import com.nihongoquest.vocab.Pronunciation;
 import com.nihongoquest.vocab.Vocabulary.Word;
 import com.nihongoquest.vocab.Vocabulary;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -32,6 +34,8 @@ public final class ClientChallenge {
     public enum State { LISTENING, WAITING, PASSED, FAILED }
 
     private static ClientChallenge current;
+    private static Word lastWord;       // for the "hear it" key after a quiz ends
+    private static long lastVoiceNotice;
     private static long lastUnavailableNotice;
 
     final int id;
@@ -46,6 +50,8 @@ public final class ClientChallenge {
     int afterTicks; // countdown for how long the result stays on screen / how long to wait for the server
     State state = State.LISTENING;
     volatile String heard = "";
+    final String guide; // English "sounds like" respelling, or null
+    final String tip;
 
     private ClientChallenge(int id, ItemStack icon, Word word, int totalTicks, int amount) {
         this.id = id;
@@ -62,6 +68,28 @@ public final class ClientChallenge {
         }
         if (word.kana() != null) t.add(Kana.normalize(word.kana()));
         this.targets = new ArrayList<>(t);
+        this.guide = word.kana() != null ? Pronunciation.guide(word.kana()) : null;
+        this.tip = word.kana() != null ? Pronunciation.tip(word.kana(), word.romaji()) : null;
+    }
+
+    /** What to give the voice: the kana reading if known (always pronounced correctly), else the written form. */
+    static String spoken(Word w) {
+        return w.kana() != null && !w.kana().isBlank() ? w.kana() : w.primary();
+    }
+
+    /** "Hear it" key: reads the current (or last) quiz word aloud. */
+    static void hear() {
+        ClientChallenge c = current;
+        Word w = c != null ? c.word : lastWord;
+        if (w == null) return;
+        if (!VoiceService.speak(spoken(w))) {
+            long now = System.currentTimeMillis();
+            if (now - lastVoiceNotice > 20_000) {
+                lastVoiceNotice = now;
+                chat(Component.literal("[日本語クエスト] ").withStyle(ChatFormatting.GOLD)
+                        .append(Component.literal(VoiceService.unavailableReason()).withStyle(ChatFormatting.GRAY)));
+            }
+        }
     }
 
     public static ClientChallenge current() {
@@ -104,6 +132,7 @@ public final class ClientChallenge {
 
         ClientChallenge c = new ClientChallenge(p.challengeId(), icon, word, p.timeLimitTicks(), p.amountAtStake());
         current = c;
+        lastWord = word;
         sound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.6f);
 
         double strictness = cfg.matchStrictness();
@@ -125,6 +154,7 @@ public final class ClientChallenge {
                         c.afterTicks = 100;
                     }
                 }));
+        if (cfg.speakAtQuizStart()) VoiceService.speak(spoken(word));
     }
 
     private void onRecognised() {
@@ -162,6 +192,7 @@ public final class ClientChallenge {
                 }
                 msg.append(Component.literal("The word was ").withStyle(ChatFormatting.GRAY)).append(wordLine(c.word));
                 chat(msg);
+                if (ModConfig.get().speakOnFail) VoiceService.speak(spoken(c.word));
             }
             default -> clear(); // cancelled
         }
@@ -201,6 +232,10 @@ public final class ClientChallenge {
             reading.append(w.romaji());
         }
         if (!reading.isEmpty()) line.append(Component.literal(" (" + reading + ")").withStyle(ChatFormatting.AQUA));
+        String guide = w.kana() != null ? Pronunciation.guide(w.kana()) : null;
+        if (guide != null && ModConfig.get().showPronunciation()) {
+            line.append(Component.literal(" ≈ " + guide).withStyle(ChatFormatting.GREEN));
+        }
         return line;
     }
 
