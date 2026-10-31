@@ -50,6 +50,8 @@ public final class ClientChallenge {
     int removed;
     int afterTicks; // countdown for how long the result stays on screen / how long to wait for the server
     State state = State.LISTENING;
+    /** When the panel appeared (for its slide-in animation). */
+    final long shownAt = System.currentTimeMillis();
     volatile String heard = "";
     final String guide; // English "sounds like" respelling, or null
 
