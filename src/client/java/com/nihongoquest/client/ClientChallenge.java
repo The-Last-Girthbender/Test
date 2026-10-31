@@ -39,7 +39,7 @@ public final class ClientChallenge {
     private static long lastUnavailableNotice;
 
     final int id;
-    final ItemStack icon;
+    final ItemStack icon; // null in the layout editor's preview (items can't be made outside a world)
     final Component itemName;
     final Word word;
     final int totalTicks;
@@ -84,9 +84,13 @@ public final class ClientChallenge {
     final String tip;
 
     private ClientChallenge(int id, ItemStack icon, Word word, int totalTicks, int amount) {
+        this(id, icon, icon.getHoverName(), word, totalTicks, amount);
+    }
+
+    private ClientChallenge(int id, ItemStack icon, Component itemName, Word word, int totalTicks, int amount) {
         this.id = id;
         this.icon = icon;
-        this.itemName = icon.getHoverName();
+        this.itemName = itemName;
         this.word = word;
         this.totalTicks = Math.max(1, totalTicks);
         this.ticksLeft = this.totalTicks;
@@ -132,6 +136,19 @@ public final class ClientChallenge {
 
     public static ClientChallenge current() {
         return current;
+    }
+
+    /** A pretend quiz for the "Move & resize panel" editor. Never sent to the server. */
+    static ClientChallenge preview() {
+        Word w = Vocabulary.lookup("minecraft:apple", false);
+        if (w == null) w = new Word("林檎", "りんご", "ringo", List.of("林檎", "りんご"), true);
+        ClientChallenge c = new ClientChallenge(-1, null, Component.literal("Apple"), w, 600, 1);
+        c.ticksLeft = 380;
+        c.heard = "りんご";
+        c.neededPct = (int) Math.round(ModConfig.get().matchStrictness() * 100);
+        c.lastPct = 72;
+        c.bestPct = 72;
+        return c;
     }
 
     // ------------------------------------------------------------------ events

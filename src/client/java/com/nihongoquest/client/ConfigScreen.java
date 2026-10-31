@@ -201,9 +201,16 @@ public class ConfigScreen extends Screen {
         items.add(toggle("Show what I said", () -> cfg().showWhatWasHeard, v -> cfg().showWhatWasHeard = v,
                 "Show what the microphone heard while you speak."));
         items.add(toggle("Sounds", () -> cfg().playSounds, v -> cfg().playSounds = v, "Chimes when a quiz starts, passes or fails."));
-        items.add(number("Panel position", "", 0, 200, 4,
-                () -> cfg().hudYOffset, v -> cfg().hudYOffset = v,
-                "Distance of the quiz panel from the top of the screen."));
+        items.add(at -> {
+            Button b = Button.builder(Component.empty(), btn -> {
+                stopTest();
+                Minecraft.getInstance().gui.setScreen(new HudLayoutScreen(this));
+            }).bounds(at[0], at[1], COL_W, 20).tooltip(Tooltip.create(Component.literal(
+                    "Drag the quiz panel anywhere on screen and change its size,\n"
+                            + "with a live preview."))).build();
+            addRenderableWidget(b);
+            refreshers.add(() -> b.setMessage(label("Move & resize panel", Math.round(cfg().hudScale() * 100) + "%")));
+        });
         items.add(at -> {
             Button b = Button.builder(Component.empty(), btn -> {
                 List<String> options = new ArrayList<>();

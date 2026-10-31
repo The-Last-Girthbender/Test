@@ -57,7 +57,12 @@ public final class ModConfig {
 
     // ---- display ----
     public boolean playSounds = true;
-    public int hudYOffset = 6;
+    public int hudYOffset = 6; // old setting (before 1.7.0), only used to place the panel the first time
+    /** Quiz panel size: 0.5 = half, 1.0 = normal, 2.0 = double. */
+    public double hudScale = 1.0;
+    /** Quiz panel position as a fraction of the free space: 0 = left/top edge, 1 = right/bottom edge. */
+    public double hudPosX = 0.5;
+    public Double hudPosY;
     public boolean showWhatWasHeard = true;
 
     // ---- pronunciation help ----
@@ -132,7 +137,9 @@ public final class ModConfig {
             values.put("microphone", c.microphone == null ? "" : c.microphone);
             values.put("penalizeWhenSpeechUnavailable", c.penalizeWhenSpeechUnavailable);
             values.put("playSounds", c.playSounds);
-            values.put("hudYOffset", c.hudYOffset);
+            values.put("hudScale", Math.round(c.hudScale() * 100) / 100.0);
+            values.put("hudPosX", Math.round(c.hudPosX() * 1000) / 1000.0);
+            values.put("hudPosY", c.hudPosY == null ? null : Math.round(c.hudPosY * 1000) / 1000.0);
             values.put("showWhatWasHeard", c.showWhatWasHeard);
             values.put("speakOnFail", c.speakOnFail);
             values.put("voiceSpeed", c.voiceSpeed);
@@ -218,6 +225,29 @@ public final class ModConfig {
         double v = matchStrictness != null ? matchStrictness : preset().strictness();
         // Below 50% random words start to "match", so that's the lowest allowed.
         return Math.max(0.5, Math.min(1.0, v));
+    }
+
+    public static final double MIN_HUD_SCALE = 0.5, MAX_HUD_SCALE = 2.0;
+
+    public double hudScale() {
+        return Math.max(MIN_HUD_SCALE, Math.min(MAX_HUD_SCALE, hudScale));
+    }
+
+    public double hudPosX() {
+        return Math.max(0, Math.min(1, hudPosX));
+    }
+
+    /** Vertical position; null means "not moved yet", which uses the old top offset. */
+    public double hudPosY(int freeSpace) {
+        if (hudPosY != null) return Math.max(0, Math.min(1, hudPosY));
+        return freeSpace <= 0 ? 0 : Math.max(0, Math.min(1, hudYOffset / (double) freeSpace));
+    }
+
+    public void resetHudLayout() {
+        hudScale = 1.0;
+        hudPosX = 0.5;
+        hudPosY = null;
+        hudYOffset = 6;
     }
 
     public boolean countEveryItem() {

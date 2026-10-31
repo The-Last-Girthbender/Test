@@ -28,11 +28,22 @@ final class ChallengeHud {
 
     private record Line(String text, int color, float scale) {}
 
+    /** Space kept between the panel and the screen edges. */
+    static final int EDGE = 4;
+
     static void extract(GuiGraphicsExtractor g, DeltaTracker delta) {
         ClientChallenge c = ClientChallenge.current();
         if (c == null) return;
+        if (Minecraft.getInstance().gui.hud.isHidden()) return;
+        draw(g, c);
+    }
+
+    /**
+     * Draws the quiz panel at the configured size and position.
+     * @return where it ended up on screen: {x, y, width, height} (used by the layout editor)
+     */
+    static int[] draw(GuiGraphicsExtractor g, ClientChallenge c) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.gui.hud.isHidden()) return;
         Font font = mc.font;
         ModConfig cfg = ModConfig.get();
         Word w = c.word;
@@ -150,11 +161,23 @@ final class ChallengeHud {
             contentW = Math.max(contentW, font.width(help));
             contentH += 11;
         }
-        int panelW = Math.min(g.guiWidth() - 8, contentW + pad * 2);
+        // ---- size and position (the panel is laid out at normal size, then scaled) ----
+        float scale = (float) cfg.hudScale();
+        int panelW = Math.min((int) ((g.guiWidth() - 2 * EDGE) / scale), contentW + pad * 2);
         int panelH = contentH + pad * 2;
-        int x0 = (g.guiWidth() - panelW) / 2;
-        int y0 = cfg.hudYOffset;
-        int cx = g.guiWidth() / 2;
+        int screenW = Math.round(panelW * scale);
+        int screenH = Math.round(panelH * scale);
+        int freeX = Math.max(0, g.guiWidth() - screenW - 2 * EDGE);
+        int freeY = Math.max(0, g.guiHeight() - screenH - 2 * EDGE);
+        int screenX = EDGE + (int) Math.round(freeX * cfg.hudPosX());
+        int screenY = EDGE + (int) Math.round(freeY * cfg.hudPosY(freeY));
+
+        g.pose().pushMatrix();
+        g.pose().translate(screenX, screenY);
+        g.pose().scale(scale, scale);
+        int x0 = 0;
+        int y0 = 0;
+        int cx = panelW / 2;
 
         int border = switch (c.state) {
             case PASSED -> GREEN;
@@ -166,7 +189,7 @@ final class ChallengeHud {
 
         // ---- header with item icon ----
         int y = y0 + pad;
-        g.item(c.icon, x0 + pad, y - 3);
+        if (c.icon != null) g.item(c.icon, x0 + pad, y - 3);
         g.text(font, header, x0 + pad + 20, y + 1, GRAY, true);
         y += 16;
 
@@ -220,6 +243,8 @@ final class ChallengeHud {
         if (help != null) {
             g.centeredText(font, help, cx, y, 0xFF8888AA);
         }
+        g.pose().popMatrix();
+        return new int[]{screenX, screenY, screenW, screenH};
     }
 
     /**

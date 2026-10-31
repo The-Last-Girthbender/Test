@@ -92,7 +92,14 @@
   //  DISPLAY & SOUND
   // ---------------------------------------------------------------------------
   "playSounds": true,
-  // Distance in pixels of the quiz panel from the top of the screen.
+  // Quiz panel size and position. Easiest to set in game: /nihongo > Display & Mic >
+  // "Move & resize panel" (drag it anywhere, scroll to resize).
+  // hudScale: 0.5 = half size, 1.0 = normal, 2.0 = double.
+  // hudPosX / hudPosY: 0.0 = left/top edge of the screen, 0.5 = middle, 1.0 = right/bottom edge.
+  "hudScale": 1.0,
+  "hudPosX": 0.5,
+  // "hudPosY": 0.0,
+  // Older setting: distance in pixels from the top, used until you move the panel.
   "hudYOffset": 6,
   // Show what the microphone heard (helps you see how you're being understood).
   "showWhatWasHeard": true,
